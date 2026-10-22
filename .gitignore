@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+tmp/
+demo/
+assets/
+
+# Local runtime state: browser profiles, account sessions, publish tasks
+rpa/state/
+runs/

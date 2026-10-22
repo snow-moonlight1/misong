@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "netdisk-encrypt"
+version = "0.1.0"
+description = "Private backup and encrypted sharing toolbox for netdisks: nested encrypted archives, volume splitting, MP4 cover containers, share-text encoders and a desktop publishing GUI."
+readme = "README.md"
+license = { text = "GPL-3.0-or-later" }
+requires-python = ">=3.11"
+classifiers = [
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+]
+dependencies = [
+    "py7zr>=1.0",
+    "pyzipper>=0.3",
+    "lz4>=4.3",
+    "zstandard>=0.22",
+    "brotli>=1.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+rpa = ["playwright>=1.51,<2"]
+gui = ["pywebview>=5"]
+
+[project.scripts]
+nde = "nde.cli:main"
+nde-gui = "nde.desktop.main:launch"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"nde" = [
+    "vendor/7zip/7za.exe", "vendor/7zip/License.txt", "vendor/7zip/README.txt",
+    "vendor/abracadabra/abracadabra-cn.mjs", "vendor/abracadabra/LICENSE", "vendor/abracadabra/README.md",
+]
+"nde.encoders" = ["abra_bridge.mjs"]
+"nde.desktop" = ["web/*", "web/disks/*"]

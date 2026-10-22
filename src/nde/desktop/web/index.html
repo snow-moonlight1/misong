@@ -1,0 +1,141 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NDE 资源发布台</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8"/><path d="M10 15v-3a6 6 0 0 1 12 0v3" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/><rect x="8" y="15" width="16" height="10" rx="2.5" fill="#fff"/><path d="M16 18.5v3" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round"/></svg>
+      <div><div class="brand-name">资源发布台</div><div class="brand-sub">Netdisk Encrypt</div></div>
+    </div>
+    <nav class="nav">
+      <button class="nav-item active" data-page="pipeline"><i data-icon="flow"></i><span>一条龙发布</span></button>
+      <div class="nav-label">单独使用</div>
+      <button class="nav-item" data-page="pack"><i data-icon="lock"></i><span>加密打包</span></button>
+      <button class="nav-item" data-page="upload"><i data-icon="cloud"></i><span>上传分享</span></button>
+      <button class="nav-item" data-page="codec"><i data-icon="wand"></i><span>链接加密</span></button>
+      <div class="nav-label">管理</div>
+      <button class="nav-item" data-page="tasks"><i data-icon="list"></i><span>任务中心</span><b class="nav-badge" id="taskBadge" hidden></b></button>
+      <button class="nav-item" data-page="accounts"><i data-icon="user"></i><span>网盘账号</span></button>
+    </nav>
+    <div class="side-foot">
+      <div class="jobcard" id="jobCard" hidden>
+        <div class="jobcard-top"><span class="spinner"></span><b id="jobTitle">任务运行中</b></div>
+        <div class="jobcard-step" id="jobStep"></div>
+        <div class="jobcard-actions"><button class="btn btn-sm" id="jobView">查看</button><button class="btn btn-sm" id="jobPause"><i data-icon="pause"></i>暂停</button></div>
+      </div>
+      <button class="log-toggle" id="logToggle"><i data-icon="terminal"></i><span>执行记录</span><b id="logCount"></b></button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <!-- 一条龙 -->
+    <section class="page active" data-page="pipeline">
+      <header class="page-head">
+        <div>
+          <h1>一条龙发布</h1>
+          <p>分 4 步设置，每步确认后再进入下一步，最后一键完成打包、上传、分享和加密文案。</p>
+        </div>
+      </header>
+      <div class="split">
+        <div class="stack">
+          <nav class="wizard" data-mount="wizard" aria-label="设置步骤"></nav>
+          <article class="card" data-step="1"><div class="card-head"><span class="step">1</span><div><h2>选择资源</h2><p>文件或文件夹，可多选，名称不能重复。</p></div></div><div data-mount="files"></div></article>
+          <article class="card" data-step="2" hidden><div class="card-head"><span class="step">2</span><div><h2>加密打包</h2><p>从内到外自由添加压缩、门面视频、分卷和改后缀层。</p></div></div><div data-mount="layers"></div><div data-mount="packopts"></div></article>
+          <article class="card" data-step="3" hidden><div class="card-head"><span class="step">3</span><div><h2>上传与分享</h2><p>可同时发到多个网盘，接收方任选其一下载。</p></div></div><div data-mount="disks"></div></article>
+          <article class="card" data-step="4" hidden><div class="card-head"><span class="step">4</span><div><h2>链接文案</h2><p>分享链接会被转换成以下文案，便于发布。</p></div></div><div data-mount="schemes"></div></article>
+          <div class="step-nav" data-mount="stepnav"></div>
+        </div>
+        <aside class="side" data-mount="run"></aside>
+      </div>
+    </section>
+
+    <!-- 加密打包 -->
+    <section class="page" data-page="pack">
+      <header class="page-head"><div><h1>加密打包</h1><p>只在本地生成加密归档，可选伪装成视频并分卷，不上传。</p></div></header>
+      <div class="split">
+        <div class="stack">
+          <article class="card"><div class="card-head"><div><h2>资源</h2></div></div><div data-mount="files"></div></article>
+          <article class="card"><div class="card-head"><div><h2>处理层</h2><p>压缩 / 加密、门面视频、分卷、改后缀，按顺序处理。</p></div></div><div data-mount="layers"></div></article>
+          <article class="card"><div class="card-head"><div><h2>交付选项</h2></div></div><div data-mount="packopts"></div></article>
+        </div>
+        <aside class="side" data-mount="run"></aside>
+      </div>
+    </section>
+
+    <!-- 上传分享 -->
+    <section class="page" data-page="upload">
+      <header class="page-head"><div><h1>上传分享</h1><p>把现成的文件上传到网盘并创建分享，可顺便生成加密文案。</p></div></header>
+      <div class="split">
+        <div class="stack">
+          <article class="card"><div class="card-head"><div><h2>文件</h2><p>只上传文件；添加文件夹时会取其中第一层的文件。</p></div></div><div data-mount="files"></div></article>
+          <article class="card"><div class="card-head"><div><h2>网盘与分享设置</h2></div></div><div data-mount="disks"></div></article>
+          <article class="card"><div class="card-head"><div><h2>链接文案</h2><p>不需要可全部取消，只保留原始分享链接。</p></div></div><div data-mount="schemes"></div></article>
+        </div>
+        <aside class="side" data-mount="run"></aside>
+      </div>
+    </section>
+
+    <!-- 链接加密 -->
+    <section class="page" data-page="codec">
+      <header class="page-head"><div><h1>链接加密</h1><p>把分享链接转换成兽曰、魔曰、哈基米等文案，或把文案解回原文。</p></div></header>
+      <div class="codec">
+        <div class="codec-bar">
+          <div class="seg" id="codecMode"><button class="on" data-v="encode">加密</button><button data-v="decode">解密</button></div>
+          <div class="codec-schemes" id="codecSchemes"></div>
+          <label class="inline-field"><span>魔曰密钥</span><input id="codecKey" type="password" placeholder="默认 ABRACADABRA" autocomplete="off"></label>
+        </div>
+        <div class="codec-panes">
+          <div class="pane">
+            <div class="pane-head"><b id="codecInLabel">原文</b><div class="pane-actions"><button class="btn btn-sm btn-ghost" id="codecPaste"><i data-icon="clipboard"></i>粘贴</button><button class="btn btn-sm btn-ghost" id="codecClear">清空</button></div></div>
+            <textarea id="codecInput" placeholder="粘贴分享链接或分享文本，例如&#10;https://pan.quark.cn/s/xxxx&#10;提取码：abcd"></textarea>
+          </div>
+          <div class="codec-mid"><button class="btn btn-primary" id="codecRun"><i data-icon="arrow"></i><span>生成文案</span></button><button class="btn btn-ghost btn-sm" id="codecSwap" title="交换输入与结果"><i data-icon="swap"></i>交换</button></div>
+          <div class="pane" id="codecOut"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 任务中心 -->
+    <section class="page" data-page="tasks">
+      <header class="page-head">
+        <div><h1>任务中心</h1><p>每个文件上传后都会保存进度；中断后可在这里继续、回填分享，也可以收藏、改名、备注或删除任务。</p></div>
+        <div class="head-actions"><button class="btn" id="tasksImport" title="把 runs 之外的任务文件夹（含 relay-plan.json / nde-task.json / *.nde.json）加入列表"><i data-icon="import"></i>导入任务</button><button class="btn" id="tasksRefresh"><i data-icon="refresh"></i>刷新</button></div>
+      </header>
+      <div class="tasks">
+        <div class="task-col">
+          <div class="search"><i data-icon="search"></i><input class="input" id="taskSearch" type="search" placeholder="搜索名称、备注、网盘…" autocomplete="off"></div>
+          <div class="seg seg-sm" id="taskFilter"><button class="on" data-v="all">全部</button><button data-v="active">未完成</button><button data-v="complete">已完成</button><button data-v="pack">仅打包</button><button data-v="star">收藏</button></div>
+          <div class="task-list" id="taskList"></div>
+        </div>
+        <div class="task-detail" id="taskDetail"></div>
+      </div>
+    </section>
+
+    <!-- 网盘账号 -->
+    <section class="page" data-page="accounts">
+      <header class="page-head">
+        <div><h1>网盘账号</h1><p>首次在弹出的浏览器里登录一次，会话只保存在本机，之后自动复用；过期时再登录即可。</p></div>
+        <div class="head-actions"><button class="btn" id="accountsRefresh"><i data-icon="refresh"></i>刷新状态</button></div>
+      </header>
+      <div class="acct-grid" id="accountGrid"></div>
+      <p class="note">状态说明：<b>未登录</b> → 登录后为 <b>已登录 · 未测试</b> → 本机用该盘完整跑通一次“上传 + 分享”后为 <b>已通过测试</b>。“检测登录”只打开网盘确认是否仍登录、不上传文件；仍登录时保持“已通过测试”，确认不到登录显示 <b>登录失效</b>（请重新登录），页面打不开则显示 <b>检测失败 · 网络</b>（登录未必失效，网络恢复后再检测）。默认使用内置 Chromium；飞猫建议用手机 App 扫码登录。</p>
+    </section>
+  </main>
+</div>
+
+<div class="logdrawer" id="logDrawer" hidden>
+  <div class="logdrawer-head"><b>执行记录</b><div><button class="btn btn-sm btn-ghost" id="logClear">清空</button><button class="btn btn-sm btn-ghost icon-only" id="logClose" aria-label="关闭"><i data-icon="x"></i></button></div></div>
+  <ol class="logs" id="logList"></ol>
+</div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<div class="modal" id="modal" hidden><div class="modal-box" role="dialog" aria-modal="true"></div></div>
+<script src="icons.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
