@@ -586,6 +586,41 @@ class BrowserDiskDriver(DiskDriver):
                 raise
             self.notify("刷新按钮被传输面板挡住，继续等待文件列表确认")
 
+    async def _choose_feimao_access(self, dialog, value):
+        """Select Feemoo's public/private share type.
+
+        Element UI mounts the open menu on document.body, outside ``.shareDialog``.
+        Searching only the dialog finds no option even though the control is on the page.
+        """
+        choices = []
+        for entry in await dialog.locator(".el-select input").all():
+            if await entry.is_visible() and (await entry.input_value()).startswith(("公开链接", "私密链接")):
+                choices.append(entry)
+        if len(choices) != 1:
+            raise DriverBlocked("未找到唯一的飞猫分享形式选项")
+        field = choices[0]
+        if await field.input_value() == value:
+            return
+        await field.click()
+        page = dialog.page
+        deadline = time.monotonic() + 2
+        scope = None
+        while scope is None:
+            menu = page.locator(".el-select-dropdown:visible").filter(has_text=value)
+            if await menu.count() == 1:
+                scope = menu
+                break
+            visible = [item for item in await page.get_by_text(value, exact=True).all() if await item.is_visible()]
+            if len(visible) == 1:
+                scope = page
+                break
+            if time.monotonic() >= deadline:
+                raise DriverBlocked(f"{self.name} 找不到唯一的“{value}”控件；请更新网盘适配配置")
+            await asyncio.sleep(0.1)
+        await (await self._text(scope, value)).click()
+        if await field.input_value() != value:
+            raise DriverBlocked("未能确认飞猫分享形式")
+
     async def _choose_quark_option(self, dialog, label):
         """Select a Quark share pill. Visible radios still use check(); hidden ones time out."""
         radio = dialog.get_by_role("radio", name=label, exact=True)
@@ -660,17 +695,8 @@ class BrowserDiskDriver(DiskDriver):
                 if not await dialog.get_by_role("checkbox", name="有提取码", exact=True).is_checked():
                     raise DriverBlocked("未能确认迅雷提取码设置")
             elif self.name == "feimao":
-                choices = []
-                for entry in await dialog.locator(".el-select input").all():
-                    if await entry.is_visible() and (await entry.input_value()).startswith(("公开链接", "私密链接")):
-                        choices.append(entry)
-                if len(choices) != 1:
-                    raise DriverBlocked("未找到唯一的飞猫分享形式选项")
                 value = "私密链接，需要密码才可访问分享内容" if enabled else "公开链接，不需要密码即可访问分享内容"
-                await choices[0].click()
-                await (await self._text(dialog, value)).click()
-                if await choices[0].input_value() != value:
-                    raise DriverBlocked("未能确认飞猫分享形式")
+                await self._choose_feimao_access(dialog, value)
 
 
 class FeimaoDriver(BrowserDiskDriver):

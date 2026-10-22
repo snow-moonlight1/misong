@@ -116,6 +116,34 @@ def test_quark_segmented_buttons_without_radios():
     asyncio.run(scenario())
 
 
+def test_feimao_share_menu_outside_dialog():
+    pytest.importorskip("playwright")
+    from playwright.async_api import async_playwright
+
+    async def scenario():
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch(headless=True)
+            page = await browser.new_page()
+            await page.set_content("""
+            <div class=shareDialog role=dialog>
+              <span>分享链接长期有效</span>
+              <div class=el-select>
+                <input readonly value="公开链接，不需要密码即可访问分享内容"
+                  onclick="document.querySelector('.el-select-dropdown').hidden=false">
+              </div>
+            </div>
+            <div class=el-select-dropdown hidden>
+              <li onclick="document.querySelector('input').value=this.textContent;this.parentElement.hidden=true">私密链接，需要密码才可访问分享内容</li>
+              <li>公开链接，不需要密码即可访问分享内容</li>
+            </div>""")
+            driver = REGISTRY["feimao"]()
+            driver.configure_share(ShareOptions("forever", "code"))
+            await driver._prepare_share(page.locator(".shareDialog"))
+            assert await page.locator("input").input_value() == "私密链接，需要密码才可访问分享内容"
+            await browser.close()
+    asyncio.run(scenario())
+
+
 def test_gui_choices_update_and_restore_previous_available_options():
     import tkinter as tk
     from nde.gui import App
