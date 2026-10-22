@@ -300,3 +300,46 @@ def test_cli_full_chain(tmp_path, sample_dir):
     txt = (tmp_path / "c.txt").read_text(encoding="utf-8").strip()
     r2 = cli("code", "decode", "-S", "beast,hajimi", "-F", tmp_path / "c.txt")
     assert "https://x.y/z 密码:1" in r2.stdout.decode("utf-8")
+
+
+@pytest.mark.parametrize("damage", ["none", "corrupt", "missing", "swapped"])
+def test_recipient_join_with_public_checksums(tmp_path, damage):
+    """Recipients receive the published .sha256, not the private JSON sidecar."""
+    from nde.workflows import write_checksums
+    src = tmp_path / "中文 空格.bin"
+    src.write_bytes(__import__('os').urandom(300))
+    volumes = tmp_path / "download"
+    splitmod.split(src, 100, volumes)
+    parts = sorted(volumes.glob("*.00?"))
+    write_checksums(parts, volumes / "checksums.sha256")
+    (volumes / (src.name + splitmod.SIDECAR_EXT)).unlink()
+    if damage == "corrupt":
+        parts[1].write_bytes(b"X" * 100)
+    elif damage == "missing":
+        parts[-1].unlink()
+    elif damage == "swapped":
+        a, b = parts[0].read_bytes(), parts[1].read_bytes()
+        parts[0].write_bytes(b)
+        parts[1].write_bytes(a)
+    out = tmp_path / "restored.bin"
+    result = cli("join", parts[0], "-o", out, expect_ok=False)
+    if damage == "none":
+        assert result.returncode == 0
+        assert out.read_bytes() == src.read_bytes()
+        assert "通过校验" in result.stdout.decode("utf-8")
+    else:
+        assert result.returncode != 0
+        assert ("缺少分卷" if damage == "missing" else "校验失败") in result.stderr.decode("utf-8")
+        assert not out.exists()
+
+
+@pytest.mark.parametrize("no_verify", [False, True])
+def test_join_does_not_claim_unperformed_verification(tmp_path, no_verify):
+    src = tmp_path / "source.bin"
+    src.write_bytes(b"abc" * 100)
+    splitmod.split(src, 100, tmp_path / "vol")
+    (tmp_path / "vol" / (src.name + splitmod.SIDECAR_EXT)).unlink()
+    r = cli("join", tmp_path / "vol" / "source.bin.001", "-o", tmp_path / "out.bin",
+            *(["--no-verify"] if no_verify else []))
+    assert "未校验" in r.stdout.decode("utf-8")
+    assert "通过校验" not in r.stdout.decode("utf-8")

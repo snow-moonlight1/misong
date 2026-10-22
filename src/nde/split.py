@@ -90,6 +90,32 @@ def split(src: Path, size: int, out_dir: Path | None = None,
 
 
 _PART_NAME_RE = re.compile(r"^(?P<base>.+?)(?:\.part(?P<idx>\d{3,})|\.(?P<idx0>\d{3,}))$")
+_CHECKSUM_RE = re.compile(r"^([0-9a-fA-F]{64}) [ *](.+)$")
+
+
+def _part_checksums(folder: Path, base: str) -> dict[str, str]:
+    """Read sha256sum records for this volume set without following paths."""
+    records: dict[str, str] = {}
+    for checksum_file in sorted(folder.glob("*.sha256")):
+        for line in checksum_file.read_text(encoding="utf-8-sig").splitlines():
+            match = _CHECKSUM_RE.fullmatch(line)
+            if not match:
+                continue
+            digest, name = match.groups()
+            part = _PART_NAME_RE.fullmatch(name)
+            if not part or part.group("base") != base or Path(name).name != name:
+                continue
+            digest = digest.lower()
+            if name in records and records[name] != digest:
+                raise RuntimeError(f"SHA-256 校验记录冲突: {name}")
+            records[name] = digest
+    return records
+
+
+def has_verification(any_part: Path) -> bool:
+    base, parts = collect_parts(any_part)
+    folder = parts[0].parent
+    return (folder / f"{base}{SIDECAR_EXT}").is_file() or bool(_part_checksums(folder, base))
 
 
 def collect_parts(any_part: Path) -> tuple[str, list[Path]]:
@@ -132,6 +158,18 @@ def join(any_part: Path, out_path: Path | None = None, verify: bool = True) -> P
         for p, rec in zip(parts, expected["parts"]):
             if p.name != rec["name"] or p.stat().st_size != rec["size"] or rec["sha256"] != _sha256_file(p):
                 raise RuntimeError(f"分卷校验失败: {p.name}（请重新下载该卷）")
+
+    if verify:
+        checksums = _part_checksums(folder, base)
+        if checksums:
+            missing = checksums.keys() - {p.name for p in parts}
+            if missing:
+                raise RuntimeError("分卷校验失败：缺少分卷 " + ", ".join(sorted(missing)))
+            for p in parts:
+                if p.name not in checksums:
+                    raise RuntimeError(f"缺少 SHA-256 校验记录: {p.name}")
+                if _sha256_file(p) != checksums[p.name]:
+                    raise RuntimeError(f"分卷校验失败: {p.name}（请重新下载该卷）")
 
     h = hashlib.sha256()
     with out_path.open("wb") as fo:

@@ -110,9 +110,11 @@ def cmd_split(a: argparse.Namespace) -> int:
 
 
 def cmd_join(a: argparse.Namespace) -> int:
+    checked = not a.no_verify and splitmod.has_verification(Path(a.part))
     out = splitmod.join(Path(a.part), Path(a.output) if a.output else None,
                         verify=not a.no_verify)
-    print(f"[ok] 合并完成并通过校验: {out} ({out.stat().st_size:,} bytes)")
+    status = "合并完成并通过校验" if checked else "合并完成（未校验：已禁用校验或未提供校验文件）"
+    print(f"[ok] {status}: {out} ({out.stat().st_size:,} bytes)")
     return 0
 
 
