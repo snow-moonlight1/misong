@@ -31,6 +31,9 @@ gui = ["pywebview>=5"]
 nde = "nde.cli:main"
 nde-gui = "nde.desktop.main:launch"
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

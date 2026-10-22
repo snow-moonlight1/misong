@@ -10,6 +10,7 @@ python -m venv .venv
 ```
 
 - 测试只使用假驱动和本地模拟页面，不访问真实网盘。
+- 默认只收集 `tests/`，不会把 `runs/` 中安装复核用的克隆副本当成另一套测试收集。
 - Node.js 18+ 在 PATH 上时运行魔曰与哈基米互通测试；ffmpeg 在 PATH 上（或 `NDE_FFMPEG` 指向 ffmpeg.exe）
   时运行门面视频播放校验；未安装 Playwright 时浏览器驱动测试跳过。
 - 界面自查：`.venv\Scripts\python scripts\ui_preview.py [--dark]` 用模拟数据在无头 Edge 中截取各页面到 `tmp/ui`。
