@@ -171,6 +171,13 @@ def unwrap(path: Path, out_dir: Path, password: str | None = None,
             if chain is None:
                 return found
             continue
+        # After the supplied archive chain, an opaque extracted file is the
+        # resource itself. Random/media bytes can contain incidental signatures;
+        # repeatedly copying and extracting those corrupts the result and makes
+        # large-file recovery quadratic. Sniffed raw/tar and MP4 cover layers
+        # above remain peelable without extra passwords.
+        if found and chain is not None and archive_index >= len(chain):
+            break
         # Legacy concatenations still use signature scanning, in bounded chunks.
         extracted = False
         if current.is_file():

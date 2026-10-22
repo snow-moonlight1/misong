@@ -278,6 +278,23 @@ def test_unwrap_disguised_zip(tmp_path, sample_dir):
     assert any(r.name == "my_resource" for r in res)
 
 
+def test_unwrap_chain_stops_at_opaque_resource(tmp_path):
+    """An archive inside arbitrary source bytes must not replace the source."""
+    import io
+    import zipfile
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as z:
+        z.writestr("incidental.txt", "This is part of the source, not another layer")
+    source = tmp_path / "opaque.bin"
+    source.write_bytes(bytes(range(256)) * 2 + buffer.getvalue())
+    archive = tmp_path / "wrapped.7z"
+    pack.pack([source], [pack.LayerSpec("7z")], archive)
+    result = merge.unwrap(archive, tmp_path / "restored", chain=[None])
+    assert len(result) == 1
+    assert result[-1].name == source.name
+    assert result[-1].read_bytes() == source.read_bytes()
+
+
 def test_unwrap_chain_peel_full_depth(sample_dir, tmp_path, small_mp4):
     """接收方视角极限用例：伪装mp4 + 视频合并 + lz4/zip/7z 三层，
     仅凭魔数嗅探+密码链一路剥到原始文件（tar 自动垫层也在链上）。"""
