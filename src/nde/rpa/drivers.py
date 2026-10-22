@@ -573,15 +573,41 @@ class BrowserDiskDriver(DiskDriver):
                 if await checkbox.is_visible() and await checkbox.is_checked():
                     raise DriverBlocked("分享流量包选项已勾选，请取消后继续")
 
+    async def _choose_quark_option(self, dialog, label):
+        """Select a Quark share pill. Visible radios still use check(); hidden ones time out."""
+        radio = dialog.get_by_role("radio", name=label, exact=True)
+        if await radio.count() == 1 and await radio.is_visible():
+            try:
+                await radio.check(timeout=2000)
+            except Exception as exc:
+                if "Timeout" not in type(exc).__name__:
+                    raise
+            if await radio.is_checked():
+                return
+        text = dialog.get_by_text(label, exact=True)
+        if await text.count() != 1:
+            raise DriverBlocked(f"未找到唯一的夸克分享选项：{label}")
+        await text.click()
+        if await radio.count() == 1 and await radio.is_checked():
+            return
+        selected = await text.evaluate(r"""el => {
+            let node = el;
+            for (let i = 0; i < 4 && node; i += 1) {
+                const mark = `${node.className || ''} ${node.getAttribute('aria-checked') || ''} ${node.getAttribute('aria-pressed') || ''} ${node.getAttribute('aria-selected') || ''}`;
+                if (/active|selected|checked|current|\btrue\b|\bon\b/.test(mark)) return true;
+                node = node.parentElement;
+            }
+            return false;
+        }""")
+        if not selected:
+            raise DriverBlocked(f"未能确认夸克分享选项：{label}")
+
     async def _apply_share_options(self, dialog):
         o = self.share_options
         if o.expiry != "default":
             label = EXPIRY_LABELS[o.expiry]
             if self.name == "quark":
-                option = dialog.get_by_role("radio", name=label, exact=True)
-                await option.check()
-                if not await option.is_checked():
-                    raise DriverBlocked("未能确认分享有效期")
+                await self._choose_quark_option(dialog, label)
             elif self.name == "uc":
                 option = dialog.locator(".slider-tabs-wrap .tabs").filter(
                     has_text=re.compile(r"^\s*" + ("永久" if o.expiry == "forever" else o.expiry) + r"\s*$"))
@@ -607,7 +633,7 @@ class BrowserDiskDriver(DiskDriver):
         if o.access != "default":
             enabled = o.access == "code"
             if self.name == "quark":
-                await dialog.get_by_role("radio", name="需要" if enabled else "不需要", exact=True).check()
+                await self._choose_quark_option(dialog, "需要" if enabled else "不需要")
             elif self.name == "uc":
                 await dialog.get_by_role("switch").set_checked(enabled)
             elif self.name == "123pan":

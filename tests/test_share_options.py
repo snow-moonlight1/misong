@@ -68,6 +68,54 @@ def test_policy_selects_observed_controls_before_share_creation(disk):
     asyncio.run(scenario())
 
 
+def test_quark_hidden_radio_uses_visible_label():
+    pytest.importorskip("playwright")
+    from playwright.async_api import async_playwright
+
+    async def scenario():
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch(headless=True)
+            page = await browser.new_page()
+            await page.set_content("""<div role=dialog>
+              <label><input type=radio name=expiry style="position:absolute;width:1px;height:1px;clip:rect(0,0,0,0)">1天</label>
+              <label><input type=radio name=expiry checked style="position:absolute;width:1px;height:1px;clip:rect(0,0,0,0)">永久有效</label>
+              <label><input type=radio name=access style="position:absolute;width:1px;height:1px;clip:rect(0,0,0,0)">需要</label>
+              <label><input type=radio name=access checked style="position:absolute;width:1px;height:1px;clip:rect(0,0,0,0)">不需要</label>
+            </div>""")
+            driver = REGISTRY["quark"]()
+            driver.configure_share(ShareOptions("1", "code"))
+            await driver._prepare_share(page.get_by_role("dialog"))
+            assert driver.share_expiry == "1天"
+            assert await page.get_by_role("radio", name="1天", exact=True).is_checked()
+            assert await page.get_by_role("radio", name="需要", exact=True).is_checked()
+            await browser.close()
+    asyncio.run(scenario())
+
+
+def test_quark_segmented_buttons_without_radios():
+    pytest.importorskip("playwright")
+    from playwright.async_api import async_playwright
+
+    async def scenario():
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch(headless=True)
+            page = await browser.new_page()
+            await page.set_content("""<div role=dialog>
+              <button type=button onclick="this.classList.add('active')">1天</button>
+              <button type=button class=active>永久有效</button>
+              <button type=button onclick="this.classList.add('active')">需要</button>
+              <button type=button class=active>不需要</button>
+            </div>""")
+            driver = REGISTRY["quark"]()
+            driver.configure_share(ShareOptions("1", "code"))
+            await driver._prepare_share(page.get_by_role("dialog"))
+            assert driver.share_expiry == "1天"
+            assert "active" in (await page.get_by_role("button", name="1天", exact=True).get_attribute("class") or "")
+            assert "active" in (await page.get_by_role("button", name="需要", exact=True).get_attribute("class") or "")
+            await browser.close()
+    asyncio.run(scenario())
+
+
 def test_gui_choices_update_and_restore_previous_available_options():
     import tkinter as tk
     from nde.gui import App
