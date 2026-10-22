@@ -430,7 +430,7 @@ class BrowserDiskDriver(DiskDriver):
                         if self.profile.get("listing_url"):
                             self.remote_sizes = await self._refresh_remote(page)
                         else:
-                            await refresh.click()
+                            await self._click_refresh(refresh)
                     next_refresh = time.monotonic() + refresh_interval
                 if time.monotonic() >= next_notice:
                     self.notify(f"等待网盘确认上传：{path.name}")
@@ -572,6 +572,19 @@ class BrowserDiskDriver(DiskDriver):
             for checkbox in await dialog.get_by_role("checkbox").all():
                 if await checkbox.is_visible() and await checkbox.is_checked():
                     raise DriverBlocked("分享流量包选项已勾选，请取消后继续")
+
+    async def _click_refresh(self, refresh):
+        """Click the site refresh control, but do not fail an upload when a transfer panel covers it.
+
+        The file row remains the success signal. Forcing the click or removing the panel could
+        hit a cancel control underneath.
+        """
+        try:
+            await refresh.click(timeout=1000)
+        except Exception as exc:
+            if "intercepts pointer events" not in str(exc):
+                raise
+            self.notify("刷新按钮被传输面板挡住，继续等待文件列表确认")
 
     async def _choose_quark_option(self, dialog, label):
         """Select a Quark share pill. Visible radios still use check(); hidden ones time out."""

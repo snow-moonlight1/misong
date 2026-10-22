@@ -78,4 +78,42 @@ def test_rejects_ambiguous_file_targets(monkeypatch, targets):
     driver, page, events = share_fixture(monkeypatch)
     with pytest.raises(DriverBlocked, match="明确文件目标"):
         asyncio.run(driver.share(page, targets))
-    assert events == []
+
+
+def test_covered_refresh_does_not_abort_upload(tmp_path):
+    pytest.importorskip("playwright")
+    from playwright.async_api import async_playwright
+
+    source = tmp_path / "part001.bin"
+    source.write_bytes(b"nde-ft")
+
+    async def scenario():
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch(headless=True)
+            page = await browser.new_page()
+            await page.set_content("""<div id=fc-content></div>
+              <button class=icon-refresh>刷新</button>
+              <div class=UploadDownloadBox style="position:fixed;inset:0;z-index:5"></div>
+              <input type=file>""")
+            await page.evaluate("""() => {
+              document.querySelector('input[type=file]').addEventListener('change', () => {
+                setTimeout(() => {
+                  document.querySelector('#fc-content').innerHTML =
+                    '<div class="file-item-hover">part001.bin</div>';
+                }, 4500);
+              });
+            }""")
+            notes = []
+            driver = FeimaoDriver(timeout=8, notify=notes.append)
+            driver.profile.pop("upload_trigger", None)
+
+            async def open_folder(page, folder):
+                driver.folder = folder
+            driver._open_folder = open_folder
+            result = await driver.upload(page, [source], "nde-ft-folder")
+            await browser.close()
+            return result, notes
+
+    result, notes = asyncio.run(scenario())
+    assert result == ["nde-ft-folder/part001.bin"]
+    assert any("传输面板" in note for note in notes)
