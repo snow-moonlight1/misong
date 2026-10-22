@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import tempfile
+import time
 from pathlib import Path
 
 
@@ -18,7 +19,17 @@ def save_json(path: Path, data: dict) -> None:
             json.dump(data, f, ensure_ascii=False, indent=2)
             f.flush()
             os.fsync(f.fileno())
-        os.replace(temp, path)
+        for attempt in range(6):
+            try:
+                os.replace(temp, path)
+                break
+            except PermissionError:
+                # Windows readers (including task-center polling) briefly deny
+                # replacement while their handle is open. Keep the old record
+                # intact and retry the same fully flushed temporary file.
+                if os.name != "nt" or attempt == 5:
+                    raise
+                time.sleep(0.02 * (attempt + 1))
     finally:
         Path(temp).unlink(missing_ok=True)
 

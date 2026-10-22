@@ -87,6 +87,7 @@ docs/                 用户文档；docs/dev/ 为开发与调研资料
 - `DiskDriver` 提供 `ensure_login(context)`、`upload(page, files, folder)`、`share(page, entry_ids)`。
 - 状态字段 `probe / ready / blocked`：`ready` 表示该账号驱动完成过上传分享，不保证会话始终有效。
 - 逐文件成功即写检查点；重跑先核对本地产物 SHA-256，已有阶段的分享直接复用。
+- Windows 检查点原子替换遇到短暂读取锁时，最多重试 6 次（总等待约 0.3 秒）；持续拒绝访问仍报错，保留旧记录并移除临时文件。
 - `share-import` 换链会使下游指引和第一跳失效重建，不自动撤销旧分享。
 - 站点改版时先用 `account probe <disk>` 或 `--diagnostics` 抓取现场；选择器可用
   `rpa/state/profiles/<disk>.json` 覆盖，无需修改加密核心。
