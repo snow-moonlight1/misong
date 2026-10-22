@@ -106,6 +106,16 @@ def test_chain_encode_decode():
     assert back == t
 
 
+@pytest.mark.parametrize("scheme", ["trunc", "trunc,base64"])
+def test_cli_trunc_decode_refuses_to_invent_a_link(scheme):
+    original = "https://example.invalid/s/complete-resource-link?query=123456789"
+    encoded = cli("code", "encode", "-S", scheme, "-T", original)
+    result = cli("code", "decode", "-S", scheme, "-T", encoded.stdout.decode("utf-8").strip(), expect_ok=False)
+    assert result.returncode != 0
+    assert not result.stdout
+    assert "有损截断" in result.stderr.decode("utf-8")
+
+
 # ---------------------------------------------------------------- hajimi
 
 def test_hajimi_roundtrip_stress():

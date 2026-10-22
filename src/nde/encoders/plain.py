@@ -83,8 +83,7 @@ def trunc(t: str, mask: str = MASK) -> str:
 def truncd(t: str, mask: str = MASK) -> str:
     if mask not in t:
         raise ValueError(f"密文中没有掩码 {mask}；截断法解码需提供原始掩码")
-    head, rest = t.split(mask, 1)
-    return head + rest  # middle must be supplied separately by the sharer
+    raise ValueError("trunc 是有损截断，中段内容不可恢复；请向发布者索取完整链接，或改用 base64 等可逆编码")
 
 
 SCHEMES = {
