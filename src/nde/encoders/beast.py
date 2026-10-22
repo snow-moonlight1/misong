@@ -75,8 +75,7 @@ def _encode_pojie(text: str, d: tuple[str, ...]) -> str:
     (Official app's own dictionary is 嗷呜喵~ in that dialect.)"""
     res = [d[3], d[1], d[0]]
     off = 0
-    for c in text:
-        v = ord(c) & 0xFFFF
+    for v in _to_utf16_units(text):
         for b in (12, 8, 4, 0):
             hexv = (((v >> b) & 15) + off) & 15
             res.append(d[hexv >> 2])

@@ -77,6 +77,15 @@ def test_beast_custom_dict():
     assert beast.decode(c, chars="点赞投币") == t
 
 
+@pytest.mark.parametrize("dialect", ["web", "sdk", "pojie"])
+@pytest.mark.parametrize("chars", [beast.DEFAULT_DICT, "点赞投币"])
+def test_beast_astral_unicode_roundtrip(dialect, chars):
+    text = "中文😀🧪𠮷 emoji\n" * 100
+    cipher = beast.encode(text, chars=chars, dialect=dialect)
+    assert beast.decode(cipher, chars=chars, dialect=dialect) == text
+    assert beast.decode(cipher, chars=chars, dialect="auto") == text
+
+
 # ---------------------------------------------------------------- plain schemes
 
 @pytest.mark.parametrize("scheme", list(plain.SCHEMES))
