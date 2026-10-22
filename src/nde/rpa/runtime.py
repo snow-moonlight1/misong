@@ -76,6 +76,20 @@ class BrowserRuntime:
             raise DriverBlocked(f"尚未适配 {disk}；当前账号入口：{', '.join(PROFILES)}；可手动回填其他网盘链接")
         return PROFILES[disk]
 
+    @staticmethod
+    def _session_origin(profile, url):
+        """Keep tab storage on its observed, approved first-party origin after redirects."""
+        expected, actual = urlsplit(profile["url"]), urlsplit(url)
+        hosts = {str(host).lower().removeprefix("www.")
+                 for host in [expected.hostname, *profile.get("hosts", [])] if host}
+        try:
+            valid = (actual.scheme == expected.scheme and actual.port == expected.port
+                     and not actual.username and not actual.password
+                     and (actual.hostname or "").removeprefix("www.") in hosts)
+        except ValueError:
+            return None
+        return f"{actual.scheme}://{actual.netloc}" if valid else None
+
     async def _save_auth(self, context, driver, disk, channel):
         """Save only a verified first-party session; never print credential values."""
         from playwright.async_api import Error as PlaywrightError
@@ -86,12 +100,10 @@ class BrowserRuntime:
                 return
             save_json(self.state_dir / (disk + ".json"), await context.storage_state(indexed_db=True))
             if driver.profile.get("session_storage"):
-                expected = urlsplit(driver.profile["url"])
-                origin = f"{expected.scheme}://{expected.netloc}"
                 session = {}
                 for page in valid:
-                    actual = urlsplit(page.url)
-                    if (actual.scheme, actual.netloc) == (expected.scheme, expected.netloc):
+                    origin = self._session_origin(driver.profile, page.url)
+                    if origin:
                         session[origin] = await page.evaluate("() => Object.fromEntries(Object.entries(sessionStorage))")
                 save_json(self.state_dir / "session-data" / f"{disk}-{channel}.json", session)
         except PlaywrightError:
@@ -137,9 +149,8 @@ class BrowserRuntime:
                     session_file = self.state_dir / "session-data" / f"{disk}-{channel}.json"
                     if profile.get("session_storage") and session_file.exists():
                         sessions = json.loads(session_file.read_text(encoding="utf-8"))
-                        expected = urlsplit(profile["url"])
-                        origin = f"{expected.scheme}://{expected.netloc}"
-                        data = {origin: sessions[origin]} if origin in sessions else {}
+                        data = {origin: entries for origin, entries in sessions.items()
+                                if self._session_origin(profile, origin) == origin and isinstance(entries, dict)}
                         await context.add_init_script("""(() => {
                             const entries = DATA[location.origin];
                             if (entries && sessionStorage.length === 0) {

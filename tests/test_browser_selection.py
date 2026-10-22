@@ -25,3 +25,13 @@ def test_choice_is_per_account_and_explicit_option_wins(tmp_path):
 ])
 def test_cli_accepts_official_browser(args):
     assert build_parser().parse_args(args).browser == "chrome"
+
+
+def test_session_storage_origin_is_limited_to_approved_hosts_and_transport():
+    profile = {"url": "https://www.nde.test/", "hosts": ["nde.test", "nde-alias.test"]}
+    origin = BrowserRuntime._session_origin
+    assert origin(profile, "https://nde.test/files") == "https://nde.test"
+    assert origin(profile, "https://www.nde-alias.test/files") == "https://www.nde-alias.test"
+    for url in ("https://unrelated.test/", "https://other.nde.test/", "http://nde.test/",
+                "https://nde.test:8443/", "https://user@nde.test/", "https://nde.test:invalid/"):
+        assert origin(profile, url) is None

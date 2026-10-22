@@ -1,6 +1,7 @@
 """Real Playwright engine against a loopback fake disk, never external accounts."""
 import asyncio
 import json
+import re
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -225,6 +226,44 @@ def test_dedicated_persistent_browser_retains_site_state(tmp_path, local_disk):
             driver.profile["logged_in_nonempty"] = True
             driver.profile["logged_in"] = "#breadcrumb"
             assert not await driver.is_logged_in(page)  # A visible empty shell is insufficient.
+    asyncio.run(scenario())
+
+
+def test_www_redirect_retains_session_storage_on_the_observed_origin(tmp_path, monkeypatch):
+    """A first-party canonical redirect must survive closing and reopening the browser."""
+    from nde.rpa.drivers import BrowserDiskDriver
+    rt = runtime_for(tmp_path, "https://www.nde.test/")
+    config = rt.profile("fixture")
+    config.update(hosts=["nde.test"], persistent=True, session_storage=True)
+    save_json(rt.state_dir / "profiles" / "fixture.json", config)
+    original = BrowserDiskDriver.ensure_login
+
+    async def install_local_routes(self, context):
+        async def respond(route):
+            if urlsplit(route.request.url).hostname == "www.nde.test":
+                await route.fulfill(body="<script>location.replace('https://nde.test/')</script>",
+                                    content_type="text/html")
+            else:
+                await route.fulfill(body='<div class="file-list">Synthetic account</div>',
+                                    content_type="text/html")
+        await context.route(re.compile(r"^https://(?:[^/]+\.)?nde\.test/"), respond)
+        return await original(self, context)
+
+    monkeypatch.setattr(BrowserDiskDriver, "ensure_login", install_local_routes)
+
+    async def scenario():
+        async with rt.open("fixture") as (_, page):
+            assert page.url == "https://nde.test/"
+            await page.evaluate("sessionStorage.setItem('fixture-session', 'synthetic-tab-session')")
+        saved = json.loads((rt.state_dir / "session-data/fixture-chromium.json").read_text(encoding="utf-8"))
+        assert saved == {"https://nde.test": {"fixture-session": "synthetic-tab-session"}}
+        # A local state file must not inject the session into unrelated origins.
+        saved["https://other.nde.test"] = {"fixture-session": "unrelated"}
+        save_json(rt.state_dir / "session-data/fixture-chromium.json", saved)
+        async with rt.open("fixture") as (_, page):
+            assert await page.evaluate("sessionStorage.getItem('fixture-session')") == "synthetic-tab-session"
+            await page.goto("https://other.nde.test/")
+            assert await page.evaluate("sessionStorage.getItem('fixture-session')") is None
     asyncio.run(scenario())
 
 
