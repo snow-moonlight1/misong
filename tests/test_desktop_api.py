@@ -84,6 +84,53 @@ def test_bootstrap_shape(api):
     assert data["job"] is None and data["settings"] == {}
 
 
+@pytest.mark.parametrize("kind", ["pack", "pipeline", "upload"])
+def test_selected_output_directory_routes_new_jobs(api, src, tmp_path, kind):
+    selected = tmp_path / "chosen output 中文"
+    selected.mkdir()
+    assert ok(api.set_output_dir(str(selected)))["runs"] == str(selected)
+    config = {"inputs": [str(src)], "layers": [{"fmt": "zip"}], "size": "100B",
+              "body_disks": ["quark"], "form": "direct", "schemes": ["beast"]}
+    if kind == "upload":
+        config["files"] = [str(src / "中文.txt")]
+    ok(getattr(api, "start_" + kind)(config))
+    event = wait_job(api)
+    assert event["state"] == "done", event["error"]
+    tasks = ok(api.list_tasks())
+    assert len(tasks) == 1
+    assert Path(tasks[0]["dir"]).parent == selected
+
+
+def test_output_directory_persists_and_keeps_previous_tasks(api, src, tmp_path):
+    ok(api.start_pack({"inputs": [str(src)], "layers": [{"fmt": "zip"}]}))
+    assert wait_job(api)["state"] == "done"
+    previous = ok(api.list_tasks())[0]
+    selected = tmp_path / "new-output"
+    selected.mkdir()
+    ok(api.set_output_dir(str(selected)))
+    restarted = Api(tmp_path / "runs", tmp_path / "state")
+    assert ok(restarted.bootstrap())["runs"] == str(selected)
+    tasks = ok(restarted.list_tasks())
+    assert [t["dir"] for t in tasks] == [previous["dir"]]
+    assert not tasks[0]["imported"]
+    assert ok(restarted.update_task(previous["dir"], {"note": "kept"}))["note"] == "kept"
+    assert Path(previous["dir"]).exists()
+
+
+def test_output_directory_rejects_invalid_or_running_changes(api, tmp_path):
+    selected = tmp_path / "output"
+    selected.mkdir()
+    file = tmp_path / "file.txt"
+    file.write_bytes(b"test")
+    original = ok(api.bootstrap())["runs"]
+    for value in ("", str(file), str(tmp_path / "missing")):
+        assert not api.set_output_dir(value)["ok"]
+    api._job = {"id": "running"}
+    assert "运行中" in api.set_output_dir(str(selected))["error"]
+    api._job = None
+    assert ok(api.bootstrap())["runs"] == original
+
+
 def test_settings_never_persist_passwords(api, tmp_path):
     ok(api.save_settings({"layers": [{"fmt": "zip", "password": "secret"}], "form": "simple",
                           "hop_password": "hop-secret", "key": "KEY"}))

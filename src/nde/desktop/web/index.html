@@ -29,6 +29,7 @@
         <div class="jobcard-step" id="jobStep"></div>
         <div class="jobcard-actions"><button class="btn btn-sm" id="jobView">查看</button><button class="btn btn-sm" id="jobPause"><i data-icon="pause"></i>暂停</button></div>
       </div>
+      <button class="output-toggle" id="outputChoose"><i data-icon="folder"></i><span>产物目录<small id="outputPath"></small></span></button>
       <button class="log-toggle" id="logToggle"><i data-icon="terminal"></i><span>执行记录</span><b id="logCount"></b></button>
     </div>
   </aside>
@@ -105,7 +106,7 @@
     <section class="page" data-page="tasks">
       <header class="page-head">
         <div><h1>任务中心</h1><p>每个文件上传后都会保存进度；中断后可在这里继续、回填分享，也可以收藏、改名、备注或删除任务。</p></div>
-        <div class="head-actions"><button class="btn" id="tasksImport" title="把 runs 之外的任务文件夹（含 relay-plan.json / nde-task.json / *.nde.json）加入列表"><i data-icon="import"></i>导入任务</button><button class="btn" id="tasksRefresh"><i data-icon="refresh"></i>刷新</button></div>
+        <div class="head-actions"><button class="btn" id="tasksImport" title="把产物目录之外的任务文件夹（含 relay-plan.json / nde-task.json / *.nde.json）加入列表"><i data-icon="import"></i>导入任务</button><button class="btn" id="tasksRefresh"><i data-icon="refresh"></i>刷新</button></div>
       </header>
       <div class="tasks">
         <div class="task-col">

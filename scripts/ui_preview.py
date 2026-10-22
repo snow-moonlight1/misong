@@ -41,6 +41,8 @@ class Fake:
         self.events: list[dict] = []
         self.ticks = 0
         self.space_blocked = False
+        self.preflight_calls = 0
+        self.output_choices = 0
         self.edits: dict[str, dict] = {
             r"D:\nde\runs\a": {"starred": True, "note": "周末发群用，记得补 UC 中转", "error": "网盘页面操作受阻（本体上传）"},
         }
@@ -79,6 +81,11 @@ class Fake:
             if method == "save_settings":
                 return {"ok": True, "data": True}
             return getattr(api, method)(*args)
+        if method == "choose_output_dir":
+            self.output_choices += 1
+            selected = api._state.parent / ("selected-output" if self.output_choices == 1 else "selected-output-2")
+            selected.mkdir(exist_ok=True)
+            return api.set_output_dir(str(selected))
         data = None
         if method == "accounts":
             data = api.accounts()["data"]
@@ -109,6 +116,7 @@ class Fake:
             self.extra = [x for x in self.extra if x["dir"] != args[0]] + [t]
             data = next(x for x in self.tasks() if x["dir"] == args[0])
         elif method == "preflight_pack":
+            self.preflight_calls += 1
             data = {"ok": not self.space_blocked, "required_bytes": 27_000_000_000, "out": r"D:\nde\runs\pending",
                     "message": "需要约 25.15 GB，当前最大可用盘仅 1 GB，请更换位置" if self.space_blocked else "本次约需中间空间 25.15 GB，总读写约 74.20 GB，预计约 8.4 分钟"}
         elif method == "pick_files":
@@ -214,6 +222,11 @@ def main():
         def modal_open():
             return page.evaluate("() => !document.querySelector('#modal').hidden")
 
+        click("#outputChoose", 300)
+        assert "selected-output" in page.locator("#outputPath").inner_text()
+        assert fake.api._runs.name == "selected-output"
+        shot("00-output-directory")
+
         # step 1: resources (下一步 is refused until something is added)
         shot("01-pipeline-step1-empty")
         click(".page.active [data-stepnext]", 300)
@@ -317,6 +330,11 @@ def main():
         fake.space_blocked = False
         page.fill(".page.active [data-lsize]", "1900")
         page.wait_for_timeout(700)
+        previous_calls = fake.preflight_calls
+        click("#outputChoose", 700)
+        assert fake.preflight_calls > previous_calls, "changing output directory must refresh space preflight"
+        assert "selected-output-2" in page.locator(".page.active .run-note").inner_text()
+        shot("10c-output-directory-changed", 5000)
 
         nav("upload")
         page.click(".page.active [data-act='pick-files']")

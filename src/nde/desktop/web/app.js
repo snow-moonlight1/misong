@@ -497,7 +497,7 @@ function packOptionsMount(page, state) {
 function requestPreflight(page) {
   const st = S[page]; if (!st || !st.layers || !st.inputs.length || !st.layers.length) return;
   const cfg = { inputs: st.inputs.map((x) => x.path), layers: layerPayload(st), layers_version: 2 };
-  const key = JSON.stringify(cfg);
+  const key = JSON.stringify({ ...cfg, output: S.meta.runs });
   if (st._preflightKey === key) return;
   st._preflightKey = key; st._preflight = null; clearTimeout(st._preflightTimer);
   st._preflightTimer = setTimeout(async () => {
@@ -674,7 +674,7 @@ function summaryCard(page) {
     push("校验文件", st.checksum ? "附带 SHA-256" : "不附带");
     return `<div class="run"><h3>生成本地产物</h3><dl class="summary">${rows.join("")}</dl>${notes}
       <div class="run-actions"><button class="btn btn-primary btn-lg btn-block" data-run="go" ${dis}>${icon("lock")}开始打包</button></div>
-      <p class="run-note">产物生成在 runs 目录，不会上传网盘。密码仅用于本次打包，不会写入磁盘。</p></div>`;
+      <p class="run-note">产物目录：${esc(S.meta.runs)}。密码仅用于本次打包，不会写入磁盘。</p></div>`;
   }
   if (page === "upload") {
     push("文件", st.files.length ? st.files.length + " 个" : "<span class='muted'>未选择</span>", !st.files.length);
@@ -800,6 +800,7 @@ $("#jobPause").addEventListener("click", pauseJob);
 $("#jobView").addEventListener("click", () => { if (S.job) go(S.job.kind === "account" ? "accounts" : S.job.kind === "pipeline" ? "pipeline" : S.job.kind === "pack" ? "pack" : S.job.kind === "upload" ? "upload" : "tasks"); });
 
 function renderJobCard() {
+  renderOutputDir();
   const card = $("#jobCard");
   if (!S.job) { card.hidden = true; return; }
   card.hidden = false;
@@ -1138,6 +1139,12 @@ function saveSettings() {
   const data = { layers: layerPayload(p), layers_version: 2, checksum: p.checksum, body_disks: p.disks, form: p.form, hop_disk: p.hop, pwd_hint: p.pwdHint, expiry: p.expiry, access: p.access, schemes: p.schemes };
   call("save_settings", data).catch(() => {});
 }
+function renderOutputDir() {
+  const path = S.meta?.runs || "runs";
+  $("#outputPath").textContent = path;
+  $("#outputChoose").title = `新任务产物目录：${path}；点击更改`;
+  $("#outputChoose").disabled = !!S.job;
+}
 function applySettings(s) {
   if (!s) return;
   const p = S.pipeline;
@@ -1164,6 +1171,17 @@ async function poll() {
 }
 
 function bindShell() {
+  $("#outputChoose").addEventListener("click", async () => {
+    try {
+      const result = await call("choose_output_dir");
+      if (!result.changed) return;
+      S.meta.runs = result.runs;
+      renderOutputDir();
+      renderAll();
+      await loadTasks();
+      toast("已更改新任务产物目录，已有任务仍保留", "ok");
+    } catch (e) { toast(e.message, "err"); }
+  });
   $$(".nav-item").forEach((b) => b.addEventListener("click", () => go(b.dataset.page)));
   $("#logToggle").addEventListener("click", () => { const d = $("#logDrawer"); d.hidden = !d.hidden; renderLogs(); });
   $("#logClose").addEventListener("click", () => { $("#logDrawer").hidden = true; });
@@ -1202,6 +1220,7 @@ async function boot() {
   try { S.meta = await call("bootstrap"); }
   catch (e) { toast("后端连接失败：" + e.message, "err"); return; }
   applySettings(S.meta.settings);
+  renderOutputDir();
   S.codec.schemes = ["beast"];
   if (S.meta.job) { S.job = S.meta.job; renderJobCard(); }
   await loadAccounts();

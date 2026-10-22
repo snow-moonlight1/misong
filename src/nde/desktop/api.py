@@ -129,8 +129,14 @@ def installed_browsers() -> dict:
 
 class Api:
     def __init__(self, runs_dir: Path = RUNS, state_dir: Path = DEFAULT_STATE, runtime_factory=None):
-        self._runs = Path(runs_dir)
         self._state = Path(state_dir)
+        self._default_runs = Path(runs_dir).resolve()
+        settings = self._load_settings()
+        selected = settings.get("output_dir")
+        self._runs = Path(selected).resolve() if isinstance(selected, str) and selected else self._default_runs
+        history = settings.get("output_roots")
+        self._output_roots = [Path(p).resolve() for p in history if isinstance(p, str) and p] if isinstance(history, list) else []
+        self._output_roots = list(dict.fromkeys([self._default_runs, *self._output_roots, self._runs]))
         self._runtime_factory = runtime_factory
         self._events: queue.Queue = queue.Queue()
         self._lock = threading.Lock()
@@ -167,6 +173,13 @@ class Api:
 
     def _new_dir(self, kind: str) -> Path:
         return self._runs / f"{datetime.now():%Y%m%d-%H%M%S}-{kind}-{uuid.uuid4().hex[:4]}"
+
+    def _task_folders(self) -> list[Path]:
+        folders = []
+        for root in self._output_roots:
+            if root.is_dir():
+                folders.extend(root.iterdir())
+        return folders
 
     def _start(self, kind: str, title: str, work, plan=None) -> dict:
         with self._lock:
@@ -309,6 +322,32 @@ class Api:
         merged = {**self._load_settings(), **clean}
         save_json(self._settings_path(), merged)
         return True
+
+    def _set_output_dir(self, folder):
+        with self._lock:
+            if self._job is not None:
+                raise RuntimeError("任务运行中不能更改产物目录，请先暂停")
+            if not isinstance(folder, str) or not folder.strip():
+                raise ValueError("请选择产物目录")
+            target = Path(folder).resolve()
+            if not target.is_dir():
+                raise ValueError("产物目录不存在或不是文件夹")
+            roots = list(dict.fromkeys([*self._output_roots, target]))
+            settings = {**self._load_settings(), "output_dir": str(target),
+                        "output_roots": [str(p) for p in roots]}
+            save_json(self._settings_path(), settings)
+            self._runs, self._output_roots = target, roots
+        return {"runs": str(target), "changed": True}
+
+    @_safe
+    def set_output_dir(self, folder):
+        return self._set_output_dir(folder)
+
+    @_safe
+    def choose_output_dir(self):
+        import webview
+        result = self._window.create_file_dialog(webview.FileDialog.FOLDER, directory=str(self._runs))
+        return self._set_output_dir(str(result[0])) if result else {"runs": str(self._runs), "changed": False}
 
     # ---------- custom layer templates (no passwords) ----------
     def _templates_path(self) -> Path:
@@ -584,7 +623,7 @@ class Api:
     def _decorate(self, data: dict, meta: dict, folder: Path) -> dict:
         data["starred"] = bool(meta.get("starred"))
         data["note"] = str(meta.get("note") or "")
-        data["imported"] = self._runs.resolve() != folder.resolve().parent
+        data["imported"] = folder.resolve().parent not in self._output_roots
         return data
 
     def _summary(self, path: Path) -> dict:
@@ -630,7 +669,7 @@ class Api:
     @_safe
     def list_tasks(self):
         items, seen = [], set()
-        folders = list(self._runs.iterdir()) if self._runs.exists() else []
+        folders = self._task_folders()
         for folder in folders + [Path(p) for p in self._extras()]:
             key = str(folder.resolve()).casefold()
             if key in seen or not folder.is_dir():
@@ -646,10 +685,10 @@ class Api:
         return items
 
     def _managed(self, folder) -> Path:
-        """Only task folders directly under runs/ or explicitly imported may be edited or removed."""
+        """Only tasks under remembered output roots or explicitly imported may be managed."""
         folder = Path(folder).resolve()
         extras = {str(Path(p).resolve()).casefold() for p in self._extras()}
-        if folder.parent != self._runs.resolve() and str(folder).casefold() not in extras:
+        if folder.parent not in self._output_roots and str(folder).casefold() not in extras:
             raise ValueError("只能管理任务中心里的任务文件夹")
         if not folder.is_dir():
             raise ValueError("任务文件夹不存在")
@@ -715,7 +754,7 @@ class Api:
             layers = self._clean_layers([{**r, "fmt": r.get("format", "7z")} for r in reversed(records)])
             workflows.write_meta(folder, "pack", folder.name, chain=chain, artifact=str(artifact),
                                  **({"settings": {"layers": layers, "layers_version": 2}} if layers else {}))
-        if folder.parent != self._runs.resolve():
+        if folder.parent not in self._output_roots:
             self._save_extras(self._extras() + [str(folder)])
         return self._task_at(folder)
 
@@ -775,7 +814,7 @@ class Api:
         a stage that was uploaded completely and shared by the driver (not a hand-filled link) proves it.
         """
         found = {}
-        folders = list(self._runs.iterdir()) if self._runs.exists() else []
+        folders = self._task_folders()
         for folder in folders + [Path(p) for p in self._extras()]:
             path = Path(folder) / "relay-plan.json"
             try:

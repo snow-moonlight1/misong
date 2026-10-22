@@ -48,6 +48,11 @@ i[data-icon] svg { width: 100%; height: 100%; }
 .nav-item span { flex: 1; }
 .nav-badge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--accent); color: #fff; font-size: 12px; line-height: 20px; text-align: center; font-weight: 600; }
 .side-foot { margin-top: auto; display: flex; flex-direction: column; gap: 10px; }
+.output-toggle { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); cursor: pointer; text-align: left; }
+.output-toggle:hover { background: var(--hover); }
+.output-toggle:disabled { opacity: .5; cursor: default; }
+.output-toggle span { min-width: 0; flex: 1; }
+.output-toggle small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; margin-top: 3px; }
 .jobcard { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px; box-shadow: var(--shadow); }
 .jobcard-top { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .jobcard-top b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
