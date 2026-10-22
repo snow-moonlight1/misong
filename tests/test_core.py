@@ -338,6 +338,18 @@ def test_cli_full_chain(tmp_path, sample_dir):
     assert "https://x.y/z 密码:1" in r2.stdout.decode("utf-8")
 
 
+def test_cli_prepares_baidu_365_day_share(tmp_path):
+    source = tmp_path / "resource.bin"
+    source.write_bytes(bytes(range(256)))
+    out = tmp_path / "prepared"
+    cli("publish", source, "-L", "zip", "--body-disk", "baidu",
+        "--share-expiry", "365", "--share-access", "code", "--prepare", "-o", out)
+    plan = json.loads((out / "relay-plan.json").read_text(encoding="utf-8"))
+    assert plan["share_options"] == {"expiry": "365", "access": "code"}
+    assert plan["state"] == "prepared"
+    assert plan["stages"][0]["disk"] == "baidu"
+
+
 @pytest.mark.parametrize("damage", ["none", "corrupt", "missing", "swapped"])
 def test_recipient_join_with_public_checksums(tmp_path, damage):
     """Recipients receive the published .sha256, not the private JSON sidecar."""

@@ -409,7 +409,7 @@ def build_parser() -> argparse.ArgumentParser:
     pub.add_argument("--body-disks", help="多个本体网盘，用逗号分隔；同一份产物逐盘上传")
     pub.add_argument("--hop-disk", default="feimao")
     pub.add_argument("--hop-password", help="复杂中转第一跳归档密码（不写入计划）")
-    pub.add_argument("--share-expiry", choices=["default", "1", "2", "3", "4", "5", "6", "7", "30", "60", "180", "forever"], default="default",
+    pub.add_argument("--share-expiry", choices=["default", "1", "2", "3", "4", "5", "6", "7", "30", "60", "180", "365", "forever"], default="default",
                      help="所有阶段统一分享有效期；数字为天数，不支持的组合在上传前拒绝")
     pub.add_argument("--share-access", choices=["default", "none", "code"], default="default",
                      help="所有阶段统一提取码：平台默认/无/自动生成")
