@@ -48,6 +48,7 @@ class Fake:
         }
         self.extra: list[dict] = []
         self.removed: set[str] = set()
+        self.live_state = ""
 
     def stages(self, done):
         return [
@@ -70,6 +71,10 @@ class Fake:
             if t["dir"] in self.removed:
                 continue
             t = {"starred": False, "note": "", "error": "", "imported": False, "settings": {}, **t, **self.edits.get(t["dir"], {})}
+            if self.live_state and t["dir"] == r"D:\nde\runs\a":
+                t["state"] = self.live_state
+                if self.live_state == "complete":
+                    t["error"] = ""
             out.append(t)
         return out
 
@@ -149,8 +154,10 @@ class Fake:
             data = True
         return {"ok": True, "data": data}
 
-    def finish(self, kind="pipeline"):
+    def finish(self, kind="pipeline", promote=False):
         job, self.job = self.job, None
+        if promote:
+            self.live_state = "complete"
         result = {"plan": r"D:\nde\runs\a\relay-plan.json", "copies": COPIES}
         if kind == "pack":
             result = {"out": r"D:\nde\runs\c", "chain": "lz4 → 7z🔒", "files": [{"name": "纪录片合集.7z", "size": 7_300_000_000}],
@@ -355,6 +362,12 @@ def main():
         page.wait_for_timeout(500)
         assert page.locator("#tasksOpen").count() == 0
         assert page.locator("#taskDetail [data-open]").inner_text() == "打开当前任务目录"
+        assert "上传中" in page.locator("#taskDetail").inner_text()
+        fake.finish(promote=True)
+        page.wait_for_timeout(2600)
+        detail = page.locator("#taskDetail").inner_text()
+        assert "已完成" in detail, detail
+        assert "上次中断原因" not in detail
         shot("14-tasks")
         page.click("#taskFilter [data-v='star']")
         page.wait_for_timeout(300)

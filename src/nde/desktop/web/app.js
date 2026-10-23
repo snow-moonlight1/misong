@@ -47,7 +47,7 @@ const S = {
   pack: { inputs: [], layers_version: 2, checksum: false, layers: [], video: "", disguise: "", split: false, size: "1900M", raw_merge: false, result: null },
   upload: { files: [], checksum: false, disks: [], expiry: "default", access: "default", schemes: ["beast", "mojibake", "hajimi"], key: "", result: null },
   codec: { mode: "encode", schemes: ["beast"], key: "", input: "", output: null, outScheme: null },
-  tasks: { items: [], sel: null, detail: null, filter: "all", query: "", loadError: "" },
+  tasks: { items: [], sel: null, detail: null, filter: "all", query: "", loadError: "", reloadDetail: false },
   accounts: [],
 };
 const DEFAULT_LAYERS = () => [{ type: "archive", fmt: "lz4", password: "", header_enc: true }, { type: "archive", fmt: "7z", password: "", header_enc: true }];
@@ -912,7 +912,16 @@ async function runCodec() {
 /* ======================================================================
    TASKS PAGE
    ====================================================================== */
-async function loadTasks() { try { S.tasks.items = await call("list_tasks"); updateBadge(); if (S.page === "tasks") renderTasks(); } catch (_) {} }
+async function loadTasks() {
+  try {
+    S.tasks.items = await call("list_tasks");
+    updateBadge();
+    // The list comes from this fetch. The open detail is a separate, older
+    // task_detail response, so a finished resume would leave the right pane
+    // stale until another card is opened.
+    if (S.page === "tasks") { S.tasks.reloadDetail = true; renderTasks(); }
+  } catch (_) {}
+}
 function updateBadge() {
   const active = S.tasks.items.filter((t) => t.state && t.state !== "complete" && t.kind !== "pack").length;
   const b = $("#taskBadge"); b.hidden = !active; b.textContent = active || "";
@@ -946,7 +955,9 @@ function renderTasks() {
     el.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target === el) selectTask(el.dataset.task); });
   });
   $$("[data-star]", list).forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); toggleStar(b.dataset.star); }));
-  if (!S.tasks.sel || !items.find((t) => taskId(t) === S.tasks.sel)) selectTask(taskId(items[0]));
+  const keep = S.tasks.sel && items.find((t) => taskId(t) === S.tasks.sel);
+  if (!keep) selectTask(taskId(items[0]));
+  else if (S.tasks.reloadDetail) { S.tasks.reloadDetail = false; selectTask(S.tasks.sel); }
   else renderTaskDetail();
 }
 async function selectTask(idpath) {
