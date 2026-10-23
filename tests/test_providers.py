@@ -43,3 +43,10 @@ def test_login_and_file_manager_urls_are_rejected(url, disk):
 def test_feemoo_private_link_fragment_and_pickup_code():
     info = parse_share("https://cm2.hk/f/fixture#密码：abC2\n取件码：fixture 密码：abC2", "feimao")
     assert info.code == "abC2" and "/f/fixture" in info.url
+
+
+def test_feemoo_password_label_before_the_url_does_not_capture_the_scheme():
+    info = parse_share("分享密码\nhttps://cm2.hk/f/fixture#密码：abC2\n分享链接长期有效", "feimao")
+    assert info.code == "abC2"
+    assert info.url.endswith("#密码：abC2")
+    assert info.expire == "长期有效"

@@ -51,13 +51,18 @@ def parse_share(text: str, disk: str, *, allowed_hosts=None) -> ShareInfo:
         raise ValueError("检测到网盘首页，请复制分享弹窗内的链接")
     params = parse_qs(parsed.query)
     code = next((params[k][0] for k in ("pwd", "code", "password", "passcode") if params.get(k)), "")
-    m = re.search(r"(?:提取码|访问码|提取密[码碼])\s*[：:=]?\s*([A-Za-z0-9]{2,16})", text, re.I)
-    if m:
-        code = m[1]
+    # Feemoo puts the access password in the fragment: https://host/f/id#密码：Ab12
+    # A "密码" label before that URL would otherwise capture the scheme "https".
+    fragment = re.search(r"(?:密码|pwd|passcode)\s*[：:=]\s*([A-Za-z0-9]{2,16})", parsed.fragment or "", re.I)
+    if fragment:
+        code = fragment[1]
+    labeled = re.search(r"(?:提取码|访问码|提取密[码碼])\s*[：:=]?\s*([A-Za-z0-9]{2,16})", text, re.I)
+    if labeled and labeled[1].lower() not in {"http", "https"}:
+        code = labeled[1]
     elif not code:
         # A guide can contain both a cloud access code and an archive password.
         generic = re.search(r"(?:(?<!解压)密[码碼]|password|pwd)\s*[：:=]?\s*([A-Za-z0-9]{2,16})", text, re.I)
-        if generic:
+        if generic and generic[1].lower() not in {"http", "https"}:
             code = generic[1]
     expiry = re.search(r"永久有效|长期有效|\d+天后失效|\d+天后过期", text)
     return ShareInfo(disk, url, code, expiry[0] if expiry else "")
