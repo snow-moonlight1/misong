@@ -330,6 +330,20 @@ class BrowserDiskDriver(DiskDriver):
             if not chooser.done():
                 chooser.cancel()
 
+    def require_new_folder(self, folder, on_created):
+        """Claim a custom name only after proving this task created the directory."""
+        self._new_folder = folder
+        self._folder_created = on_created
+
+    def _check_folder_claim(self, folder, exists):
+        if getattr(self, "_new_folder", None) == folder and exists:
+            raise DriverBlocked("自定义网盘目录已存在，请换一个名称；未上传或分享已有目录")
+
+    def _confirm_folder_claim(self, folder):
+        if getattr(self, "_new_folder", None) == folder:
+            self._folder_created()
+            self._new_folder = None
+
     async def _open_folder(self, page, folder):
         await self.check_restriction(page)
         if self.folder == folder:
@@ -341,6 +355,7 @@ class BrowserDiskDriver(DiskDriver):
         if row is None and root_files is not None and folder in root_files:
             await self.rows(page, folder).wait_for(state="visible", timeout=15000)
             row = await self._row(page, folder)
+        self._check_folder_claim(folder, row is not None or root_files is not None and folder in root_files)
         if row is None:
             if self.profile.get("new_folder_menu"):
                 await (await self._text(page, self.profile["new_folder_menu"])).click()
@@ -359,6 +374,7 @@ class BrowserDiskDriver(DiskDriver):
                 await asyncio.sleep(.25)
         if row is None:
             raise DriverBlocked("未能确认任务目录已创建；未选择任何其他文件")
+        self._confirm_folder_claim(folder)
         self.remote_parent = await row.get_attribute("data-row-key")
         old_url = page.url
         # Quark attaches folder navigation to the filename, not the entire row.
@@ -892,11 +908,13 @@ class BaiduDriver(BrowserDiskDriver):
             return
         await self._root(page)
         row = await self._wait_row(page, folder)
+        self._check_folder_claim(folder, row is not None)
         if row is None:
             await self._create_folder(page, folder)
             row = await self._wait_row(page, folder)
             if row is None:
                 raise DriverBlocked("未能确认百度网盘任务目录已创建；未选择任何其他文件")
+        self._confirm_folder_claim(folder)
         await self._enter_folder(page, row, folder)
 
     async def upload(self, page, files: list[Path], folder: str) -> list[str]:

@@ -37,10 +37,13 @@ class PublishOptions:
     share_options: ShareOptions = field(default_factory=ShareOptions)
     body_disks: tuple[str, ...] = ()
     checksum: bool = False
+    task_name: str = ""
+    folder_name: str = ""
 
 
 def prepare(options: PublishOptions, notify=print) -> Path:
     o = options
+    title, folder_name = workflows.publication_names(o.task_name, o.folder_name)
     if o.form not in ("direct", "simple", "complex"):
         raise ValueError("中转模式必须为 direct/simple/complex")
     body_disks = list(dict.fromkeys(map(disk_name, o.body_disks or (o.body_disk,))))
@@ -65,12 +68,13 @@ def prepare(options: PublishOptions, notify=print) -> Path:
     result = workflows.pack_only(inputs, layers, target / "body", checksum=o.checksum, notify=notify)
     files = [Path(rec["path"]) for rec in result["files"]]
     records = [fingerprint(p) for p in files]
-    stages = [{"id": "body" if i == 0 else "body-" + disk, "role": "body", "disk": disk,
-               "folder": f"nde-{job_id}-body-{disk}", "files": records, "state": "pending", "uploaded": {}}
+    stages = [workflows.upload_stage(job_id, disk, records, i, folder_name)
               for i, disk in enumerate(body_disks)]
     if o.form != "direct":
         # Stored first for compatibility with the original relay-plan stage ordering.
-        stages.insert(0, {"id": "hop", "disk": disk_name(o.hop_disk), "folder": f"nde-{job_id}-hop",
+        stages.insert(0, {"id": "hop", "disk": disk_name(o.hop_disk),
+                          "folder": folder_name + "-hop" if folder_name else f"nde-{job_id}-hop",
+                          **({"custom_folder": True} if folder_name else {}),
                           "depends_on": "body", "depends_on_all": [s["id"] for s in stages],
                           "files": [], "state": "pending", "uploaded": {}})
     plan = {"version": 2, "id": job_id, "form": o.form, "stages": stages,
@@ -78,6 +82,7 @@ def prepare(options: PublishOptions, notify=print) -> Path:
             "share_options": o.share_options.to_dict()}
     path = target / "relay-plan.json"
     save_json(path, plan)
+    workflows.write_meta(target, "pipeline", title or workflows.title_for(inputs), folder_name=folder_name)
     notify(f"已准备：{len(files)} 个待上传文件；任务 {path}")
     return path
 
@@ -118,6 +123,8 @@ def import_share(plan_path: Path, stage_id: str, text: str):
                     child["uploaded"] = {}
                     child["state"] = "pending"
                     child["folder"] = f"nde-{plan['id']}-{child['id']}-{uuid.uuid4().hex[:6]}"
+                    child.pop("custom_folder", None)
+                    child.pop("folder_created", None)
             plan.pop("final_share", None)
             plan.pop("final_shares", None)
             plan["state"] = "prepared"
@@ -171,6 +178,11 @@ async def publish(plan_path: Path, *, runtime=None, notify=print, cancel: Event 
                     continue
                 notify(f"上传：{stage['id']} / {stage['disk']}")
                 async with runtime.open(stage["disk"]) as (driver, page):
+                    if stage.get("custom_folder") and not stage.get("folder_created"):
+                        def folder_created():
+                            stage["folder_created"] = True
+                            checkpoint()
+                        driver.require_new_folder(stage["folder"], folder_created)
                     if not share_options.is_default:
                         driver.configure_share(share_options)
                     for rec in stage["files"]:

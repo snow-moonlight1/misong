@@ -43,9 +43,9 @@ async function call(method, ...args) {
 /* ---------- global state ---------- */
 const S = {
   meta: null, settings: {}, page: "pipeline", job: null, logs: [], logSeen: 0,
-  pipeline: { inputs: [], layers_version: 2, checksum: false, layers: [], video: "", disguise: "", size: "1900M", raw_merge: false, disks: [], form: "direct", hop: "feimao", hopPw: "", pwdHint: "请向分享者获取解压密码。", expiry: "default", access: "default", schemes: ["beast", "mojibake", "hajimi"], key: "", result: null },
+  pipeline: { task_name: "", folder_name: "", inputs: [], layers_version: 2, checksum: false, layers: [], video: "", disguise: "", size: "1900M", raw_merge: false, disks: [], form: "direct", hop: "feimao", hopPw: "", pwdHint: "请向分享者获取解压密码。", expiry: "default", access: "default", schemes: ["beast", "mojibake", "hajimi"], key: "", result: null },
   pack: { inputs: [], layers_version: 2, checksum: false, layers: [], video: "", disguise: "", split: false, size: "1900M", raw_merge: false, result: null },
-  upload: { files: [], checksum: false, disks: [], expiry: "default", access: "default", schemes: ["beast", "mojibake", "hajimi"], key: "", result: null },
+  upload: { task_name: "", folder_name: "", files: [], checksum: false, disks: [], expiry: "default", access: "default", schemes: ["beast", "mojibake", "hajimi"], key: "", result: null },
   codec: { mode: "encode", schemes: ["beast"], key: "", input: "", output: null, outScheme: null },
   tasks: { items: [], sel: null, detail: null, filter: "all", query: "", loadError: "", reloadDetail: false },
   accounts: [],
@@ -455,6 +455,13 @@ window.__NDE_APP__ = { S, call, toast };
    ====================================================================== */
 function mount(page, name) { return $(`.page[data-page="${page}"] [data-mount="${name}"]`); }
 
+function namingMount(page, state) {
+  const el = mount(page, "names"); if (!el) return;
+  el.innerHTML = `<div class="grid2"><label class="field"><span>任务名称 · 可选</span><input class="input" data-model="task_name" maxlength="120" value="${esc(state.task_name || "")}" placeholder="留空使用资源名称"></label>
+    <label class="field"><span>网盘目录名 · 可选</span><input class="input" data-model="folder_name" maxlength="100" value="${esc(state.folder_name || "")}" placeholder="留空自动生成独立目录"></label></div>
+    <p class="hint">多盘使用同名目录；中转第一跳加 -hop。自定义目录已存在时会停止，请使用新名称。</p>`;
+  bindModels(el, state);
+}
 function renderFilesMount(page, state, key, filesOnly) {
   const el = mount(page, "files"); if (!el) return;
   el.innerHTML = dropzone(page + "-" + key, filesOnly ? "拖入文件，或点击选择" : "拖入文件 / 文件夹，或点击选择",
@@ -772,9 +779,9 @@ async function startJob(page, mode, confirmed) {
     if (page === "pack") {
       data = await call("start_pack", { inputs: st.inputs.map((f) => f.path), layers: layerPayload(st), layers_version: 2, checksum: st.checksum });
     } else if (page === "upload") {
-      data = await call("start_upload", { files: st.files.map((f) => f.path), checksum: st.checksum, body_disks: st.disks, expiry: st.expiry, access: st.access, schemes: st.schemes, key: st.key });
+      data = await call("start_upload", { task_name: st.task_name, folder_name: st.folder_name, files: st.files.map((f) => f.path), checksum: st.checksum, body_disks: st.disks, expiry: st.expiry, access: st.access, schemes: st.schemes, key: st.key });
     } else {
-      data = await call("start_pipeline", { inputs: st.inputs.map((f) => f.path), layers: layerPayload(st), layers_version: 2, checksum: st.checksum, body_disks: st.disks, form: st.form, hop_disk: st.hop, hop_password: st.hopPw, pwd_hint: st.pwdHint, expiry: st.expiry, access: st.access, schemes: st.schemes, key: st.key, upload: mode === "publish" });
+      data = await call("start_pipeline", { task_name: st.task_name, folder_name: st.folder_name, inputs: st.inputs.map((f) => f.path), layers: layerPayload(st), layers_version: 2, checksum: st.checksum, body_disks: st.disks, form: st.form, hop_disk: st.hop, hop_password: st.hopPw, pwd_hint: st.pwdHint, expiry: st.expiry, access: st.access, schemes: st.schemes, key: st.key, upload: mode === "publish" });
     }
     S.job = data; S.job.task = null; st.result = null;
     saveSettings();
@@ -829,9 +836,9 @@ function onJobEvent(ev) {
 /* ---------- page rerender dispatch ---------- */
 function rerender(page) {
   const st = S[page];
-  if (page === "pipeline") { renderFilesMount("pipeline", st, "inputs", false); layerEditor(st, '[data-mount="layers"]', $('.page[data-page="pipeline"]')); packOptionsMount("pipeline", st); disksMount("pipeline", st); schemesMount("pipeline", st); runPanel("pipeline"); }
+  if (page === "pipeline") { namingMount(page, st); renderFilesMount("pipeline", st, "inputs", false); layerEditor(st, '[data-mount="layers"]', $('.page[data-page="pipeline"]')); packOptionsMount("pipeline", st); disksMount("pipeline", st); schemesMount("pipeline", st); runPanel("pipeline"); }
   else if (page === "pack") { renderFilesMount("pack", st, "inputs", false); layerEditor(st, '[data-mount="layers"]', $('.page[data-page="pack"]')); packOptionsMount("pack", st); runPanel("pack"); }
-  else if (page === "upload") { renderFilesMount("upload", st, "files", true); disksMount("upload", st); schemesMount("upload", st); runPanel("upload"); }
+  else if (page === "upload") { namingMount(page, st); renderFilesMount("upload", st, "files", true); disksMount("upload", st); schemesMount("upload", st); runPanel("upload"); }
   else if (page === "codec") renderCodec();
   else if (page === "tasks") renderTasks();
   else if (page === "accounts") renderAccounts();
@@ -1069,6 +1076,7 @@ function reuseSettings(d) {
     st.inputs = [];
   }
   if (page !== "pack") {
+    st.task_name = ""; st.folder_name = "";
     if (Array.isArray(s.body_disks)) st.disks = s.body_disks.filter((k) => S.meta.providers.some((p) => p.key === k && p.auto));
     if (s.expiry) st.expiry = s.expiry; if (s.access) st.access = s.access;
     if (Array.isArray(s.schemes)) st.schemes = s.schemes.slice();

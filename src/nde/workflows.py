@@ -8,6 +8,7 @@ Passwords are never written to disk here.
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -50,6 +51,24 @@ def title_for(inputs) -> str:
     if not names:
         return "未命名任务"
     return names[0] if len(names) == 1 else f"{names[0]} 等 {len(names)} 项"
+
+
+def publication_names(task_name="", folder_name="") -> tuple[str, str]:
+    """Validate optional display title and a single portable remote directory name."""
+    title, folder = str(task_name or "").strip(), str(folder_name or "").strip()
+    if len(title) > 120 or any(ord(c) < 32 for c in title):
+        raise ValueError("任务名称最多 120 个字符，不能含控制字符")
+    if folder and (len(folder) > 100 or folder in (".", "..") or folder.endswith(".") or
+                   re.search(r'[<>:"/\\|?*\x00-\x1f]', folder) or
+                   re.fullmatch(r"(?i)(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?", folder)):
+        raise ValueError("网盘目录名最多 100 个字符，不能是路径或含特殊字符、保留名称")
+    return title, folder
+
+
+def upload_stage(job_id, disk, records, index=0, folder_name=""):
+    return {"id": "body" if index == 0 else "body-" + disk, "role": "body", "disk": disk,
+            "folder": folder_name or f"nde-{job_id}-body-{disk}", "files": records,
+            "state": "pending", "uploaded": {}, **({"custom_folder": True} if folder_name else {})}
 
 
 def _fresh_dir(out_dir: Path, inputs: list[Path]) -> Path:
@@ -133,9 +152,10 @@ def _file_info(path: Path) -> dict:
 
 
 def prepare_upload(files, out_dir: Path, body_disks, share_options: ShareOptions | None = None,
-                   schemes=(), notify=print, *, checksum=False) -> Path:
+                   schemes=(), notify=print, *, checksum=False, task_name="", folder_name="") -> Path:
     """Create a direct-share v2 plan for existing local files; publish() then uploads and shares."""
     from .rpa.drivers import PROFILES
+    title, folder_name = publication_names(task_name, folder_name)
     share_options = share_options or ShareOptions()
     files = [Path(p).resolve(strict=True) for p in files if not is_local_metadata(p) and
              (checksum or Path(p).suffix.lower() != ".sha256")]
@@ -161,13 +181,12 @@ def prepare_upload(files, out_dir: Path, body_disks, share_options: ShareOptions
         files = [p for p in files if p.suffix.lower() != ".sha256"]
         files.append(write_checksums(files, target / "checksums.sha256"))
     records = [fingerprint(p) for p in files]
-    stages = [{"id": "body" if i == 0 else "body-" + disk, "role": "body", "disk": disk,
-               "folder": f"nde-{job_id}-body-{disk}", "files": records, "state": "pending", "uploaded": {}}
+    stages = [upload_stage(job_id, disk, records, i, folder_name)
               for i, disk in enumerate(disks)]
     plan = {"version": 2, "id": job_id, "form": "direct", "stages": stages, "schemes": list(schemes),
             "pwd_hint": "", "state": "prepared", "share_options": share_options.to_dict()}
     path = target / "relay-plan.json"
     save_json(path, plan)
-    write_meta(target, "upload", title_for(files))
+    write_meta(target, "upload", title or title_for(files), folder_name=folder_name)
     notify(f"已准备：{len(files)} 个文件 → {len(disks)} 个网盘")
     return path

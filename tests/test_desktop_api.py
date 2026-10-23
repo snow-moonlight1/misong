@@ -21,6 +21,10 @@ class FakeRuntime:
         runtime = self
 
         class Driver:
+            def require_new_folder(self, folder, on_created):
+                runtime.events.append(("new-folder", disk, folder))
+                on_created()
+
             def configure_share(self, options):
                 runtime.events.append(("share-options", disk))
 
@@ -450,3 +454,29 @@ def test_mojibake_node_runs_without_console_window(monkeypatch):
     assert seen["creationflags"] == mojibake.NO_WINDOW
     if os.name == "nt":
         assert mojibake.NO_WINDOW == subprocess.CREATE_NO_WINDOW
+
+@pytest.mark.parametrize("kind", ["pipeline", "upload"])
+def test_publication_names_in_job_and_reopened_task(api, src, kind):
+    source = src / "中文.txt"
+    cfg = {"task_name": "第八期 中文 🐈", "folder_name": "nde-第八期", "body_disks": ["quark"],
+           "schemes": ["beast"], "inputs": [str(source)], "files": [str(source)],
+           "layers": [{"fmt": "zip", "password": "memory-only"}], "size": ""}
+    job = ok(getattr(api, "start_pipeline" if kind == "pipeline" else "start_upload")(cfg))
+    assert job["title"] == cfg["task_name"]
+    event = wait_job(api)
+    assert event["state"] == "done", event
+    task = ok(api.list_tasks())[0]
+    assert task["title"] == cfg["task_name"]
+    data = json.loads(Path(task["plan"]).read_text(encoding="utf-8"))
+    assert data["stages"][0]["folder"] == cfg["folder_name"]
+    reopened = Api(api._runs, api._state)
+    assert ok(reopened.list_tasks())[0]["title"] == cfg["task_name"]
+    assert "memory-only" not in (Path(task["dir"]) / "nde-task.json").read_text(encoding="utf-8")
+
+
+def test_invalid_names_rejected_before_background_job(api, src):
+    result = api.start_pipeline({"inputs": [str(src)], "task_name": "x" * 121})
+    assert not result["ok"] and "任务名称" in result["error"]
+    result = api.start_upload({"files": [str(src / "中文.txt")], "folder_name": "../existing"})
+    assert not result["ok"] and "目录名" in result["error"]
+    assert api._job is None

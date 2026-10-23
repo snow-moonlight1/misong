@@ -250,6 +250,8 @@ def cmd_publish(a):
     from .rpa.runtime import BrowserRuntime
     from .share_options import ShareOptions
     if a.plan:
+        if a.task_name or a.folder_name:
+            raise ValueError("--plan 续跑沿用任务名称和网盘目录名，不能覆盖")
         if a.inputs:
             raise ValueError("--plan 续跑时不能同时指定输入资源")
         if a.body_disks:
@@ -268,7 +270,7 @@ def cmd_publish(a):
             schemes=tuple(s.strip() for s in a.schemes.split(",") if s.strip()),
             share_options=ShareOptions(a.share_expiry, a.share_access),
             body_disks=tuple(s.strip() for s in a.body_disks.split(",") if s.strip()) if a.body_disks else (),
-            checksum=a.checksum)
+            checksum=a.checksum, task_name=a.task_name, folder_name=a.folder_name)
         plan_path = prepare(options)
     if not a.prepare:
         runtime = BrowserRuntime(headless=a.headless, timeout=a.upload_timeout, diagnostics=a.diagnostics,
@@ -396,6 +398,8 @@ def build_parser() -> argparse.ArgumentParser:
     pub = sub.add_parser("publish", help="打包、上传、中转、生成加密分享文案；支持断点续跑")
     pub.add_argument("inputs", nargs="*")
     pub.add_argument("--plan", help="继续已有 relay-plan.json")
+    pub.add_argument("--task-name", default="", help="任务名称；留空取第一个资源名")
+    pub.add_argument("--folder-name", default="", help="新建网盘目录名；多盘同名，中转第一跳加 -hop；已存在则拒绝")
     pub.add_argument("-o", "--out", help="新任务输出目录（必须不存在）")
     pub.add_argument("-L", "--layers", default="lz4,7z")
     pub.add_argument("-P", "--password", default="", help="按层对应的密码链，建议 GUI 输入以免进入命令历史")

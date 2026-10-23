@@ -27,6 +27,10 @@ class FakeRuntime:
         self.events.append(("open", disk))
         runtime = self
         class Driver:
+            def require_new_folder(self, folder, on_created):
+                runtime.events.append(("new-folder", disk, folder))
+                on_created()
+
             def configure_share(self, options):
                 runtime.events.append(("share-options", disk, options.to_dict()))
 
@@ -158,6 +162,64 @@ def test_completed_job_never_opens_disk_again(tmp_path):
     rt = FakeRuntime()
     run(path, rt)
     assert rt.events == []
+
+
+def test_custom_names_survive_resume_without_reclaiming_folder(tmp_path):
+    from nde import workflows
+    path = make_job(tmp_path, task_name="  第一期 🐈  ", folder_name="nde-自定义目录", body_disks=("quark", "uc"))
+    assert workflows.read_meta(path.parent)["title"] == "第一期 🐈"
+    assert all(s["folder"] == "nde-自定义目录" for s in load(path)["stages"])
+    with pytest.raises(RuntimeError):
+        run(path, FakeRuntime(fail_upload=2))
+    assert load(path)["stages"][0]["folder_created"]
+    resumed = FakeRuntime()
+    run(path, resumed)
+    assert ("new-folder", "quark", "nde-自定义目录") not in resumed.events
+    assert ("new-folder", "uc", "nde-自定义目录") in resumed.events
+
+
+def test_custom_relay_names_keep_body_and_hop_separate(tmp_path):
+    path = make_job(tmp_path, "simple", folder_name="nde-本体", hop_disk="quark")
+    stages = load(path)["stages"]
+    assert [s["folder"] for s in stages] == ["nde-本体-hop", "nde-本体"]
+    run(path, FakeRuntime())
+    import_share(path, "body", "https://pan.quark.cn/s/replacement")
+    hop = load(path)["stages"][0]
+    assert hop["folder"] != "nde-本体-hop"
+    assert not hop.get("custom_folder") and not hop.get("folder_created")
+
+
+@pytest.mark.parametrize("folder", ["../old", "a/b", "a\\b", "..", "a:", "a*", "a?", "a\n", "NUL", "CON.txt", "x.", "x" * 101])
+def test_invalid_custom_folder_rejected_before_output(tmp_path, folder):
+    # Control characters in the middle cannot be hidden by whitespace trimming.
+    if folder == "a\n":
+        folder = "a\nb"
+    with pytest.raises(ValueError, match="目录名"):
+        make_job(tmp_path, folder_name=folder)
+    assert not (tmp_path / "output").exists()
+
+
+def test_cli_names_and_resume_override_rejected(tmp_path):
+    from nde.cli import main
+    from nde import workflows
+    src = tmp_path / "源.txt"
+    src.write_text("test", encoding="utf-8")
+    out = tmp_path / "named"
+    assert main(["publish", str(src), "-o", str(out), "--prepare", "-L", "zip", "--schemes", "beast",
+                 "--task-name", "我的任务", "--folder-name", "nde-指定目录"]) == 0
+    path = out / "relay-plan.json"
+    assert workflows.read_meta(out)["title"] == "我的任务"
+    assert load(path)["stages"][0]["folder"] == "nde-指定目录"
+    assert main(["publish", "--plan", str(path), "--folder-name", "other", "--prepare"]) != 0
+
+
+def test_blank_names_preserve_default_folders_and_title(tmp_path):
+    from nde import workflows
+    path = make_job(tmp_path, task_name="   ", folder_name="   ")
+    plan = load(path)
+    assert plan["stages"][0]["folder"] == f"nde-{plan['id']}-body-quark"
+    assert not plan["stages"][0].get("custom_folder")
+    assert workflows.read_meta(path.parent)["title"] == "input"
 
 
 def test_changed_part_rejected_before_network(tmp_path):

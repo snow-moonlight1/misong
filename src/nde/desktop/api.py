@@ -273,9 +273,9 @@ class Api:
         """Settings saved with a task for "用相同设置新建"; passwords are reduced to a locked flag."""
         layers = Api._clean_layers(cfg.get("layers"))
         keys = {"pipeline": ("size", "disguise", "raw_merge", "body_disks", "form", "hop_disk", "pwd_hint",
-                             "expiry", "access", "schemes", "checksum", "video", "layers_version"),
+                             "expiry", "access", "schemes", "checksum", "video", "layers_version", "task_name", "folder_name"),
                 "pack": ("size", "split", "disguise", "raw_merge", "checksum", "video", "layers_version"),
-                "upload": ("body_disks", "expiry", "access", "schemes", "checksum")}[kind]
+                "upload": ("body_disks", "expiry", "access", "schemes", "checksum", "task_name", "folder_name")}[kind]
         snap = {k: cfg[k] for k in keys if k in cfg and not isinstance(cfg[k], dict)}
         if "disguise" in snap:
             snap["disguise"] = Api._disguise(snap["disguise"])
@@ -494,6 +494,7 @@ class Api:
 
     @_safe
     def start_pipeline(self, cfg):
+        task_name, folder_name = workflows.publication_names(cfg.get("task_name"), cfg.get("folder_name"))
         inputs = [Path(p) for p in cfg.get("inputs") or []]
         if not inputs:
             raise ValueError("请先添加要发布的资源")
@@ -521,15 +522,16 @@ class Api:
         options = PublishOptions(inputs=inputs, out=Path(checked["out"]), layers=layers, size="",
                                  body_disk=disks[0], hop_disk=hop, form=form,
                                  pwd_hint=cfg.get("pwd_hint") or "请向分享者获取解压密码。", schemes=schemes,
-                                 share_options=share, body_disks=disks, checksum=bool(cfg.get("checksum")))
+                                 share_options=share, body_disks=disks, checksum=bool(cfg.get("checksum")),
+                                 task_name=task_name, folder_name=folder_name)
         upload = bool(cfg.get("upload", True))
         key = cfg.get("key") or "ABRACADABRA"
-        title = workflows.title_for(inputs)
+        title = task_name or workflows.title_for(inputs)
 
         def work(job):
             notify = self._notify(job)
             path = prepare(options, notify)
-            workflows.write_meta(path.parent, "pipeline", title, settings=self._snapshot(cfg, "pipeline"))
+            workflows.update_meta(path.parent, settings=self._snapshot(cfg, "pipeline"))
             job["plan"] = str(path)
             if not upload:
                 return {"plan": str(path), "task": self._summary(path)}
@@ -559,6 +561,7 @@ class Api:
 
     @_safe
     def start_upload(self, cfg):
+        task_name, folder_name = workflows.publication_names(cfg.get("task_name"), cfg.get("folder_name"))
         files = [Path(p) for p in cfg.get("files") or []]
         disks = tuple(cfg.get("body_disks") or ())
         share = ShareOptions(cfg.get("expiry") or "default", cfg.get("access") or "default")
@@ -574,12 +577,13 @@ class Api:
 
         def work(job):
             notify = self._notify(job)
-            path = workflows.prepare_upload(files, out, disks, share, schemes, notify, checksum=bool(cfg.get("checksum")))
+            path = workflows.prepare_upload(files, out, disks, share, schemes, notify, checksum=bool(cfg.get("checksum")),
+                                            task_name=task_name, folder_name=folder_name)
             workflows.update_meta(path.parent, settings=self._snapshot(cfg, "upload"))
             job["plan"] = str(path)
             result = asyncio.run(publish(path, runtime=self._runtime(notify), notify=notify, cancel=self._cancel, key=key))
             return {"plan": str(path), "copies": result["copies"], "task": self._summary(path)}
-        return self._start("upload", workflows.title_for(files), work)
+        return self._start("upload", task_name or workflows.title_for(files), work)
 
     @_safe
     def resume_task(self, plan, key="", hop_password=""):
