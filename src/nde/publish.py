@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Event
 
-from . import formats, merge, pack, split, workflows, preflight
+from . import cleanup, formats, merge, pack, split, workflows, preflight
 from .layers import migrate, validate
 from .jobs import exclusive, fingerprint, save_json, verify_files
 from .sharing import COPY_SCHEMES, ShareInfo, disk_name, parse_share, write_copy
@@ -39,6 +39,7 @@ class PublishOptions:
     checksum: bool = False
     task_name: str = ""
     folder_name: str = ""
+    cleanup_after_upload: bool = False
 
 
 def prepare(options: PublishOptions, notify=print) -> Path:
@@ -80,6 +81,8 @@ def prepare(options: PublishOptions, notify=print) -> Path:
     plan = {"version": 2, "id": job_id, "form": o.form, "stages": stages,
             "schemes": list(o.schemes), "pwd_hint": o.pwd_hint, "state": "prepared",
             "share_options": o.share_options.to_dict()}
+    sources = inputs + [Path(layer.video) for layer in layers if layer.type == "cover" and layer.video]
+    plan["local_cleanup"] = cleanup.inventory(target, sources, records, o.cleanup_after_upload)
     path = target / "relay-plan.json"
     save_json(path, plan)
     workflows.write_meta(target, "pipeline", title or workflows.title_for(inputs), folder_name=folder_name)
@@ -170,9 +173,13 @@ async def publish(plan_path: Path, *, runtime=None, notify=print, cancel: Event 
                             raise Paused("复杂中转需要第一跳压缩包密码；继续时提供 --hop-password")
                         payload = plan_path.parent / "guide.7z"
                         pack.pack([guide], [pack.LayerSpec("7z", hop_password, True)], payload)
+                    cleanup.register(plan, fingerprint(guide))
+                    if payload != guide:
+                        cleanup.register(plan, fingerprint(payload))
                     stage["files"] = [fingerprint(payload)]
                     checkpoint()
-                verify_files(stage["files"])
+                verify_files([rec for rec in stage["files"]
+                              if not (stage.get("share") and cleanup.owns(plan, rec))])
                 if stage.get("share"):
                     notify(f"复用分享：{stage['id']} / {stage['disk']}")
                     continue
@@ -218,10 +225,12 @@ async def publish(plan_path: Path, *, runtime=None, notify=print, cancel: Event 
             plan["final_shares"] = [s.to_dict() for s in final_shares]
             checkpoint()
             notify(f"完成：{plan_path.parent / 'copy'}")
-            return {"plan": plan, "copies": copies}
         except BaseException as e:
             plan["state"] = "paused" if isinstance(e, (Paused, KeyboardInterrupt, asyncio.CancelledError)) else "blocked"
             # Do not persist arbitrary exception strings, which may contain authentication URLs.
             plan["error"] = {"type": type(e).__name__, "stage": stage.get("id", "copy") if 'stage' in locals() else "start"}
             checkpoint()
             raise
+        # Publication is durable before cleanup. Failures here never relabel the share as blocked.
+        cleanup.remove_generated(plan_path, plan, checkpoint, notify)
+        return {"plan": plan, "copies": copies}

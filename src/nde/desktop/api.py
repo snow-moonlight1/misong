@@ -18,7 +18,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from .. import formats, pack, workflows, preflight
+from .. import cleanup, formats, pack, workflows, preflight
 from ..layers import migrate, validate
 from ..jobs import save_json
 from ..providers import PROVIDERS
@@ -308,7 +308,7 @@ class Api:
         """Settings saved with a task for "用相同设置新建"; passwords are reduced to a locked flag."""
         layers = Api._clean_layers(cfg.get("layers"))
         keys = {"pipeline": ("size", "disguise", "raw_merge", "body_disks", "form", "hop_disk", "pwd_hint",
-                             "expiry", "access", "schemes", "checksum", "video", "layers_version", "task_name", "folder_name"),
+                             "expiry", "access", "schemes", "checksum", "video", "layers_version", "task_name", "folder_name", "cleanup_after_upload"),
                 "pack": ("size", "split", "disguise", "raw_merge", "checksum", "video", "layers_version"),
                 "upload": ("body_disks", "expiry", "access", "schemes", "checksum", "task_name", "folder_name")}[kind]
         snap = {k: cfg[k] for k in keys if k in cfg and not isinstance(cfg[k], dict)}
@@ -566,7 +566,8 @@ class Api:
                                  body_disk=disks[0], hop_disk=hop, form=form,
                                  pwd_hint=cfg.get("pwd_hint") or "请向分享者获取解压密码。", schemes=schemes,
                                  share_options=share, body_disks=disks, checksum=bool(cfg.get("checksum")),
-                                 task_name=task_name, folder_name=folder_name)
+                                 task_name=task_name, folder_name=folder_name,
+                                 cleanup_after_upload=bool(cfg.get("cleanup_after_upload")))
         upload = bool(cfg.get("upload", True))
         key = cfg.get("key") or "ABRACADABRA"
         title = task_name or workflows.title_for(inputs)
@@ -693,6 +694,7 @@ class Api:
                 "state": plan.get("state", "prepared"), "form": plan.get("form", "direct"),
                 "schemes": plan.get("schemes", []), "share_options": plan.get("share_options", {}),
                 "stages": stages, "error": error_text(plan.get("error")),
+                "cleanup": cleanup.summary(plan),
                 "settings": meta.get("settings") or self._derived_settings(plan, stages, kind)}
         return self._decorate(data, meta, path.parent)
 

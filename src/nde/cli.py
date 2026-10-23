@@ -250,6 +250,8 @@ def cmd_publish(a):
     from .rpa.runtime import BrowserRuntime
     from .share_options import ShareOptions
     if a.plan:
+        if a.cleanup_after_upload:
+            raise ValueError("--plan 续跑沿用任务保存的清理选项，不能覆盖")
         if a.task_name or a.folder_name:
             raise ValueError("--plan 续跑沿用任务名称和网盘目录名，不能覆盖")
         if a.inputs:
@@ -270,7 +272,8 @@ def cmd_publish(a):
             schemes=tuple(s.strip() for s in a.schemes.split(",") if s.strip()),
             share_options=ShareOptions(a.share_expiry, a.share_access),
             body_disks=tuple(s.strip() for s in a.body_disks.split(",") if s.strip()) if a.body_disks else (),
-            checksum=a.checksum, task_name=a.task_name, folder_name=a.folder_name)
+            checksum=a.checksum, task_name=a.task_name, folder_name=a.folder_name,
+            cleanup_after_upload=a.cleanup_after_upload)
         plan_path = prepare(options)
     if not a.prepare:
         runtime = BrowserRuntime(headless=a.headless, timeout=a.upload_timeout, diagnostics=a.diagnostics,
@@ -406,6 +409,8 @@ def build_parser() -> argparse.ArgumentParser:
     pub.add_argument("-s", "--size", default="1900M", help="默认 1900MB；只填数字按 MB；空字符串禁用分卷")
     pub.add_argument("--disguise", default="")
     pub.add_argument("--checksum", action="store_true", help="额外上传标准 SHA-256 校验文件（默认关）")
+    pub.add_argument("--cleanup-after-upload", action="store_true",
+                     help="所有网盘上传并分享完成后，删除本任务加工产物；保留源文件及任务记录（默认关）")
     pub.add_argument("--video", help="可选门面视频")
     pub.add_argument("--raw", action="store_true", help="兼容旧参数；publish 的门面视频现自动嵌入开头")
     pub.add_argument("--form", choices=["direct", "simple", "complex"], default="direct")

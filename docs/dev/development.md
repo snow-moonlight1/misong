@@ -103,6 +103,12 @@ docs/                 用户文档；docs/dev/ 为开发与调研资料
 - `DiskDriver` 提供 `ensure_login(context)`、`upload(page, files, folder)`、`share(page, entry_ids)`。
 - 状态字段 `probe / ready / blocked`：`ready` 表示该账号驱动完成过上传分享，不保证会话始终有效。
 - 逐文件成功即写检查点；重跑先核对本地产物 SHA-256，已有阶段的分享直接复用。
+- `PublishOptions.cleanup_after_upload` / CLI `--cleanup-after-upload` 默认关闭，仅适用于加工后发布。
+  准备时写入 `local_cleanup` 的精确生成文件、SHA-256、输入保护路径和任务根目录；生成中转时追加登记。
+  所有阶段均有逐文件上传确认和分享，文案及 complete 检查点保存后才删除登记文件；不递归扫描删除，不清理旧任务或单独上传的源文件。
+  删除前核对任务目录、链接/硬链接、输入范围及哈希；源资源、清单、任务、还原说明、文案与未登记文件保留。
+  清理逐文件保存进度，文件占用/变化只记清理未完成，不改变发布成功状态；`publish --plan <任务>` 可重试，已分享阶段不因登记产物已清理而重传。
+  选项保存在本任务用于续跑，不存全局默认，复用设置及新建任务时关闭；`--plan` 不接受覆盖该选项。
 - Windows 检查点原子替换遇到短暂读取锁时，最多重试 6 次（总等待约 0.3 秒）；持续拒绝访问仍报错，保留旧记录并移除临时文件。
 - `share-import` 换链会使下游指引和第一跳失效重建，不自动撤销旧分享。
 - 站点改版时先用 `account probe <disk>` 或 `--diagnostics` 抓取现场；选择器可用

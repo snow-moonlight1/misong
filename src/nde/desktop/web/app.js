@@ -43,7 +43,7 @@ async function call(method, ...args) {
 /* ---------- global state ---------- */
 const S = {
   meta: null, settings: {}, page: "pipeline", job: null, logs: [], logSeen: 0,
-  pipeline: { task_name: "", folder_name: "", inputs: [], layers_version: 2, checksum: false, layers: [], video: "", disguise: "", size: "1900M", raw_merge: false, disks: [], form: "direct", hop: "feimao", hopPw: "", pwdHint: "请向分享者获取解压密码。", expiry: "default", access: "default", schemes: ["beast", "mojibake", "hajimi"], key: "", result: null },
+  pipeline: { task_name: "", folder_name: "", cleanup_after_upload: false, inputs: [], layers_version: 2, checksum: false, layers: [], video: "", disguise: "", size: "1900M", raw_merge: false, disks: [], form: "direct", hop: "feimao", hopPw: "", pwdHint: "请向分享者获取解压密码。", expiry: "default", access: "default", schemes: ["beast", "mojibake", "hajimi"], key: "", result: null },
   pack: { inputs: [], layers_version: 2, checksum: false, layers: [], video: "", disguise: "", split: false, size: "1900M", raw_merge: false, result: null },
   upload: { task_name: "", folder_name: "", files: [], checksum: false, disks: [], expiry: "default", access: "default", schemes: ["beast", "mojibake", "hajimi"], key: "", result: null },
   codec: { mode: "encode", schemes: ["beast"], key: "", input: "", output: null, outScheme: null },
@@ -509,6 +509,7 @@ function videoField(layer, index) {
 function packOptionsMount(page, state) {
   const el = mount(page, "packopts"); if (!el) return;
   el.innerHTML = `<label class="check"><input type="checkbox" data-model="checksum" ${state.checksum ? "checked" : ""}>附带校验文件（SHA-256）</label><p class="hint">仅上传最后一层的文件 / 分卷；清单与还原说明保留在本地。</p>`;
+  if (page === "pipeline") el.innerHTML += `<div class="sub"><label class="check"><input type="checkbox" data-model="cleanup_after_upload" ${state.cleanup_after_upload ? "checked" : ""}>上传完成后删除本地加工产物</label><p class="hint">全部目标网盘上传并分享成功后，删除本任务生成的压缩包、门面视频、分卷、校验文件和中转文件。保留源文件、原始视频、任务记录及还原说明；仅生成本地产物、暂停或失败时不删除。</p></div>`;
   bindModels(el, state, () => runPanel(page));
 }
 function requestPreflight(page) {
@@ -709,6 +710,7 @@ function summaryCard(page) {
   push("本体网盘", diskNames(st.disks), !st.disks.length);
   push("分享方式", S.meta.forms[st.form] + (st.form !== "direct" ? " · " + diskNames([st.hop]) : ""), st.form === "complex" && !st.hopPw);
   push("文案", st.schemes.length ? schemeNames(st.schemes) : "<span class='muted'>未选</span>", !st.schemes.length);
+  push("本地产物", st.cleanup_after_upload ? "分享完成后删除 · 保留源文件" : "保留");
   return `<div class="run"><h3>开始发布</h3><dl class="summary">${rows.join("")}</dl>${notes}
     <div class="run-actions">
       <button class="btn btn-primary btn-lg btn-block" data-run="publish" ${dis}>${icon("flow")}打包并上传分享</button>
@@ -739,6 +741,13 @@ function progressCard() {
     <div class="run-actions" style="margin-top:16px"><button class="btn btn-block" id="runPause">${icon("pause")}暂停任务</button></div></div>`;
 }
 function badge(state) { return `<span class="badge ${STATE_CLASS[state] || ""}">${esc(STATE_LABEL[state] || state)}</span>`; }
+function cleanupNote(task) {
+  const c = task && task.cleanup;
+  if (!c || !c.enabled) return "";
+  const done = c.state === "complete";
+  const text = done ? `已删除 ${c.deleted} 个本地加工文件，源文件和任务记录保留。` : c.state === "pending" ? "上传分享完成后自动删除本地加工产物，源文件保留。" : `部分加工产物未清理，已保留文件；源文件保留。可用 CLI 继续该任务重试清理。`;
+  return `<div class="callout ${done ? "" : "warn"}">${icon(done ? "check" : "info")}<span>${esc(text)}</span></div>`;
+}
 
 function resultCard(page, result) {
   if (result.error) {
@@ -762,6 +771,7 @@ function resultCard(page, result) {
   const first = keys[0];
   return `<div class="result-card success"><div class="result-title"><span class="ok-ic">${icon("check")}</span>发布完成</div>
     <p class="result-msg">分享链接已生成以下加密文案，点击标签切换。</p>
+    ${cleanupNote(result.task)}
     ${keys.length ? `<div class="tabs">${tabs}</div><div class="copybox"><pre id="copyPre">${esc(copies[first] || "")}</pre><button class="btn btn-sm btn-primary" id="copyBtn">${icon("copy")}复制</button></div>` : "<p class='muted'>未选文案方案。</p>"}
     <div class="run-actions" style="margin-top:14px"><button class="btn btn-block" data-open="${esc(result.plan || "")}">${icon("folder")}打开任务目录</button><button class="btn btn-block" data-newrun>${icon("plus")}新建任务</button></div></div>`;
 }
@@ -773,7 +783,7 @@ function bindResult(el, page, result) {
   }));
   const cb = $("#copyBtn", el); if (cb) cb.addEventListener("click", () => copy($("#copyPre", el).textContent, cb));
   $$("[data-open]", el).forEach((b) => b.addEventListener("click", () => { if (b.dataset.open) call("open_path", b.dataset.open).catch((e) => toast(e.message, "err")); }));
-  const nr = $("[data-newrun]", el); if (nr) nr.addEventListener("click", () => { S[page].result = null; if (page === "pipeline") S.pipeline._step = 1; rerender(page); });
+  const nr = $("[data-newrun]", el); if (nr) nr.addEventListener("click", () => { S[page].result = null; if (page === "pipeline") { S.pipeline._step = 1; S.pipeline.cleanup_after_upload = false; } rerender(page); });
   const rs = $("[data-resume]", el); if (rs) rs.addEventListener("click", () => resumeTask(rs.dataset.resume, page));
 }
 
@@ -791,7 +801,7 @@ async function startJob(page, mode, confirmed) {
     } else if (page === "upload") {
       data = await call("start_upload", { task_name: st.task_name, folder_name: st.folder_name, files: st.files.map((f) => f.path), checksum: st.checksum, body_disks: st.disks, expiry: st.expiry, access: st.access, schemes: st.schemes, key: st.key });
     } else {
-      data = await call("start_pipeline", { task_name: st.task_name, folder_name: st.folder_name, inputs: st.inputs.map((f) => f.path), layers: layerPayload(st), layers_version: 2, checksum: st.checksum, body_disks: st.disks, form: st.form, hop_disk: st.hop, hop_password: st.hopPw, pwd_hint: st.pwdHint, expiry: st.expiry, access: st.access, schemes: st.schemes, key: st.key, upload: mode === "publish" });
+      data = await call("start_pipeline", { task_name: st.task_name, folder_name: st.folder_name, cleanup_after_upload: st.cleanup_after_upload, inputs: st.inputs.map((f) => f.path), layers: layerPayload(st), layers_version: 2, checksum: st.checksum, body_disks: st.disks, form: st.form, hop_disk: st.hop, hop_password: st.hopPw, pwd_hint: st.pwdHint, expiry: st.expiry, access: st.access, schemes: st.schemes, key: st.key, upload: mode === "publish" });
     }
     S.job = data; S.job.task = null; st.result = null;
     saveSettings();
@@ -1027,7 +1037,7 @@ function renderTaskDetail() {
   host.innerHTML = `<div class="detail"><div class="detail-head"><div class="detail-title"><button class="star big ${d.starred ? "on" : ""}" data-dstar title="${d.starred ? "取消收藏" : "收藏"}" aria-label="收藏">${icon(d.starred ? "starfill" : "star")}</button><div><h2>${esc(d.title)}</h2><p>${esc(d.dir)}</p></div></div>
     <div class="btn-row">${canResume ? `<button class="btn btn-primary" data-resume="${esc(d.plan)}" ${running ? "disabled" : ""}>${icon("play")}继续</button>` : ""}<button class="btn" data-reuse title="把这个任务的打包、网盘和文案设置填到新建页面（不含密码和资源）">${icon("refresh")}复用设置</button><button class="btn" data-open="${esc(d.dir)}" title="打开当前选中任务的文件夹">${icon("folder")}打开当前任务目录</button>
     <button class="btn btn-ghost icon-only" data-edit title="重命名 / 备注" aria-label="编辑">${icon("edit")}</button><button class="btn btn-ghost icon-only btn-danger" data-del title="${d.imported ? "从列表移除（保留文件）" : "删除（移到回收站）"}" aria-label="删除" ${running ? "disabled" : ""}>${icon("trash")}</button></div></div>
-    ${errHtml}${noteHtml}<div class="detail-grid">${statsHtml}</div>${stages}${copies}${filesHtml}</div>`;
+    ${errHtml}${noteHtml}${cleanupNote(d)}<div class="detail-grid">${statsHtml}</div>${stages}${copies}${filesHtml}</div>`;
   paintIcons(host);
   $$("[data-open]", host).forEach((b) => b.addEventListener("click", () => call("open_path", b.dataset.open).catch((e) => toast(e.message, "err"))));
   const rb = $("[data-resume]", host); if (rb) rb.addEventListener("click", () => resumeTask(rb.dataset.resume));
@@ -1092,7 +1102,7 @@ function reuseSettings(d) {
     if (Array.isArray(s.schemes)) st.schemes = s.schemes.slice();
     if (page === "upload") { st.files = []; st.checksum = !!s.checksum; }
   }
-  if (page === "pipeline") { if (s.form) st.form = s.form; if (s.hop_disk) st.hop = s.hop_disk; if (s.pwd_hint) st.pwdHint = s.pwd_hint; st.hopPw = ""; }
+  if (page === "pipeline") { if (s.form) st.form = s.form; if (s.hop_disk) st.hop = s.hop_disk; if (s.pwd_hint) st.pwdHint = s.pwd_hint; st.hopPw = ""; st.cleanup_after_upload = false; }
   st.result = null;
   if (page === "pipeline") st._step = 1;
   go(page);
