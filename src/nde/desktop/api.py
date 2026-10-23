@@ -26,6 +26,41 @@ from ..publish import Paused, PublishOptions, import_share, prepare, publish
 from ..rpa.drivers import PROFILES
 from ..rpa.runtime import BROWSERS, DEFAULT_STATE, ROOT, BrowserRuntime
 from ..share_options import ACCESS_LABELS, EXPIRY_LABELS, ShareOptions, common_options
+
+
+def _clipboard_text():
+    """Read only when requested by the paste button; never retain clipboard contents."""
+    if os.name != "nt":
+        import tkinter
+        root = tkinter.Tk()
+        root.withdraw()
+        try:
+            return root.clipboard_get()
+        finally:
+            root.destroy()
+    import ctypes
+    from ctypes import wintypes
+    user, kernel = ctypes.windll.user32, ctypes.windll.kernel32
+    user.GetClipboardData.argtypes = [wintypes.UINT]
+    user.GetClipboardData.restype = wintypes.HANDLE
+    kernel.GlobalLock.argtypes = [wintypes.HANDLE]
+    kernel.GlobalLock.restype = ctypes.c_void_p
+    kernel.GlobalUnlock.argtypes = [wintypes.HANDLE]
+    if not user.OpenClipboard(None):
+        raise RuntimeError("剪贴板暂时被占用，请稍后重试")
+    try:
+        handle = user.GetClipboardData(13)  # CF_UNICODETEXT; supports Explorer's Copy as path.
+        if not handle:
+            return ""
+        pointer = kernel.GlobalLock(handle)
+        if not pointer:
+            raise RuntimeError("无法读取剪贴板文本")
+        try:
+            return ctypes.wstring_at(pointer)
+        finally:
+            kernel.GlobalUnlock(handle)
+    finally:
+        user.CloseClipboard()
 from ..sharing import COPY_SCHEMES, encode_copy
 
 RUNS = ROOT / "runs"
@@ -417,6 +452,14 @@ class Api:
         return self._save_templates(missing + items)
 
     # ---------- files ----------
+    @_safe
+    def clipboard_paths(self):
+        try:
+            text = _clipboard_text()
+        except Exception:
+            raise RuntimeError("无法读取剪贴板，请重试或使用选择文件、拖放") from None
+        return [line.strip().strip('"') for line in text.splitlines() if line.strip()]
+
     @_safe
     def pick_files(self, multiple=True, video=False):
         import webview

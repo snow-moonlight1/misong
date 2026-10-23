@@ -46,6 +46,8 @@ docs/                 用户文档；docs/dev/ 为开发与调研资料
 桌面端可在左下角选择新任务产物目录；当前目录和历史目录保存在本机 `ui-settings.json`，
 任务中心只扫描这些目录的直接子任务与显式导入任务。选择仓库外目录时仍须自行避免提交私密产物。
 
+文件区“粘贴路径”通过 `Api.clipboard_paths` 显式读取系统剪贴板，再复用 `describe_paths`；Windows 原生 Unicode 剪贴板读取不依赖 WebView 文档焦点，读取失败不回显原文。
+
 ## 打包层模型
 
 - `layers.py` 定义四类层：archive（压缩/加密）、cover（门面视频）、split（分卷）、rename（改后缀），按内到外执行。

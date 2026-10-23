@@ -115,7 +115,7 @@ function dropzone(id, title, sub, compact) {
   return `<div class="drop ${compact ? "compact" : ""}" data-drop="${id}">
     <span class="drop-icon">${icon("inbox")}</span>
     <div class="drop-text"><b>${esc(title)}</b><small>${esc(sub)}</small></div>
-    <div class="btn-row"><button class="btn" data-act="pick-files">${icon("file")}选择文件</button><button class="btn" data-act="pick-folder">${icon("folder")}文件夹</button></div>
+    <div class="btn-row"><button class="btn" data-act="paste-paths">${icon("clipboard")}粘贴路径</button><button class="btn" data-act="pick-files">${icon("file")}选择文件</button><button class="btn" data-act="pick-folder">${icon("folder")}文件夹</button></div>
   </div>`;
 }
 function pwField(label, value, key, placeholder) {
@@ -469,6 +469,16 @@ function renderFilesMount(page, state, key, filesOnly) {
   paintIcons(el);
   const uc = $("[data-uploadchecksum]", el); if (uc) uc.addEventListener("change", () => { state.checksum = uc.checked; runPanel(page); });
   const dz = $("[data-drop]", el);
+  $("[data-act='paste-paths']", el).addEventListener("click", async () => {
+    try {
+      const paths = await call("clipboard_paths");
+      if (!paths.length) { toast("剪贴板里没有路径，请先复制文件的完整路径", "warn"); return; }
+      const before = items(state, key).length;
+      await addPaths(items(state, key), paths, filesOnly);
+      if (items(state, key).length === before) toast("没有新增文件，请检查路径是否存在或已经添加", "warn");
+      rerender(page);
+    } catch (_) { toast("无法读取剪贴板，请使用选择文件或拖放", "warn"); }
+  });
   $("[data-act='pick-files']", el).addEventListener("click", async () => {
     try { await addPaths(items(state, key), await call("pick_files", true, false), filesOnly); rerender(page); } catch (e) { toast(e.message, "err"); }
   });
