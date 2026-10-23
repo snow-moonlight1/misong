@@ -68,3 +68,33 @@ def test_clipboard_bridge_parses_paths_and_redacts_read_errors(tmp_path, monkeyp
     result = api.clipboard_paths()
     assert not result['ok'] and 'private-clipboard-text' not in str(result)
     assert not list((tmp_path / 'state').rglob('*clipboard*'))
+
+
+@pytest.mark.parametrize('width', [940, 1090, 1320])
+def test_file_actions_do_not_squeeze_drop_instructions(tmp_path, width):
+    pw = pytest.importorskip('playwright.sync_api')
+    root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location('preview_for_drop_layout', root / 'scripts/ui_preview.py')
+    preview = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(preview)
+    fake = preview.Fake(Api(tmp_path / 'runs', tmp_path / 'state'))
+    with pw.sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page(viewport={'width': width, 'height': 900})
+        page.expose_function('__py', fake)
+        page.add_init_script(preview.MOCK_JS)
+        page.goto(preview.WEB.as_uri())
+        page.wait_for_selector('.page.active [data-act="paste-paths"]')
+        for module in ('一条龙发布', '加密打包', '上传分享'):
+            page.get_by_role('button', name=module, exact=True).click()
+            zone = page.locator('.page.active .drop').first
+            title = zone.locator('.drop-text b').bounding_box()
+            bounds = zone.bounding_box()
+            assert title['width'] >= 180
+            assert title['height'] < 65, (module, width, title)
+            for button in zone.locator('button').all():
+                button_bounds = button.bounding_box()
+                assert bounds['x'] <= button_bounds['x']
+                assert button_bounds['x'] + button_bounds['width'] <= bounds['x'] + bounds['width']
+                assert button_bounds['y'] >= title['y'] + title['height']
+        browser.close()
