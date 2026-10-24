@@ -1,4 +1,4 @@
-# netdiskencrypt（nde）
+# 密送（Misong）
 
 面向个人的**私密备份与加密分发**工具箱（Windows）：把自己的文件打包成多层加密归档，
 按需分卷或嵌入门面视频，自动上传到网盘并创建分享，再把分享链接转换成兽曰/魔曰/哈基米等文本。
@@ -29,8 +29,8 @@
 ## 安装
 
 ```powershell
-git clone <仓库地址> netdiskencrypt
-cd netdiskencrypt
+git clone <仓库地址> misong
+cd misong
 python -m venv .venv
 .venv\Scripts\python -m pip install -e ".[gui,rpa]"
 .venv\Scripts\python -m playwright install chromium
@@ -38,7 +38,7 @@ python -m venv .venv
 
 ## 快速开始
 
-**桌面应用**：双击 `start-gui.cmd`，或运行 `.venv\Scripts\python nde.py gui`。
+**桌面应用**：双击 `start-gui.cmd`，或运行 `.venv\Scripts\python misong.py gui`。
 首次使用先到“网盘账号”页登录（软件会打开专用浏览器窗口，扫码、密码、短信等由你自己完成），
 登录状态只保存在本机被 Git 忽略的 `rpa/state/`。
 
@@ -46,25 +46,25 @@ python -m venv .venv
 
 ```powershell
 # 登录网盘（窗口保持打开，关闭即可）；可加 --browser chrome / msedge 使用本机浏览器
-.venv\Scripts\python nde.py account login quark
+.venv\Scripts\python misong.py account login quark
 
 # 一条命令：打包 → 分卷 → 上传 → 分享 → 生成兽曰/魔曰/哈基米文案
-.venv\Scripts\python nde.py publish MyRes -L 'lz4,7z' '-P=-,myPW' -o runs/my-release
+.venv\Scripts\python misong.py publish MyRes -L 'lz4,7z' '-P=-,myPW' -o runs/my-release
 
 # 多盘发布，统一 7 天有效期并带提取码
-.venv\Scripts\python nde.py publish MyRes -L zip --body-disks uc,xunlei,123pan --share-expiry 7 --share-access code -o runs/multi
+.venv\Scripts\python misong.py publish MyRes -L zip --body-disks uc,xunlei,123pan --share-expiry 7 --share-access code -o runs/multi
 
 # 只在本地打包：lz4 → zip(密码) → 7z(密码+文件名加密)，外层改后缀为 .mp4
-.venv\Scripts\python nde.py nest MyRes -L lz4,zip,7z '-P=-,pw1,outerPW' --disguise .mp4
+.venv\Scripts\python misong.py nest MyRes -L lz4,zip,7z '-P=-,pw1,outerPW' --disguise .mp4
 
 # 用 JSON 描述任意层：zip → 门面视频 → 150MB 分卷
 $layers = '[{"type":"archive","fmt":"zip"},{"type":"cover","video":"C:/media/intro.mp4"},{"type":"split","size":"150MB"}]'
-.venv\Scripts\python nde.py nest MyRes -L $layers -o runs/cover.mp4
+.venv\Scripts\python misong.py nest MyRes -L $layers -o runs/cover.mp4
 
 # 链接文案编解码（可逗号串联）
-.venv\Scripts\python nde.py code encode -S beast -T "https://example.com/s/abc 提取码:1234"
-.venv\Scripts\python nde.py code encode -S mojibake --key 我的魔咒 -T "同上"
-.venv\Scripts\python nde.py code decode -S beast,hajimi -F cipher.txt
+.venv\Scripts\python misong.py code encode -S beast -T "https://example.com/s/abc 提取码:1234"
+.venv\Scripts\python misong.py code encode -S mojibake --key 我的魔咒 -T "同上"
+.venv\Scripts\python misong.py code decode -S beast,hajimi -F cipher.txt
 ```
 
 密码链以 `-` 开头时，PowerShell 中请整体加引号写成 `'-P=-,pw1,pw2'`（`-` 表示该层无密码）。
@@ -89,7 +89,7 @@ $layers = '[{"type":"archive","fmt":"zip"},{"type":"cover","video":"C:/media/int
 ## 接收方如何还原
 
 解开链接文案 → 打开分享并下载**全部**文件/分卷 → 用 7-Zip / WinRAR 打开 `.001` 或单个文件并输入密码；
-含冷门格式层或多层嵌套时，用 `nde unwrap 第一卷.001 -o restored --chain-pwd="外层密码,内层密码"` 一次剥离。
+含冷门格式层或多层嵌套时，用 `misong unwrap 第一卷.001 -o restored --chain-pwd="外层密码,内层密码"` 一次剥离。
 详见[接收方指南](docs/receiver-guide.md)。
 
 ## 文档
@@ -106,6 +106,14 @@ $layers = '[{"type":"archive","fmt":"zip"},{"type":"cover","video":"C:/media/int
 
 归档密码和魔曰密钥只在内存中使用，不写入任务文件或界面设置。账号会话、任务记录和分享文案只保存在本机，
 默认被 Git 忽略。软件只访问你选择的网盘网站，不包含遥测。
+
+## 旧版兼容
+
+本项目原名 `netdiskencrypt`（`nde`），首个正式公开版本统一更名为密送（Misong），命令为 `misong`。
+旧版 `.nde.json`（v1/v2）、`.ndesplit.json`、`nde-task.json` 及分享文案仍可读取；新生成文件使用
+`.misong.json`、`.misongsplit.json` 和 `misong-task.json`。已有任务的检查点及远端目录沿用原记录。
+源码运行继续使用原来的 `rpa/state/`，保留已有浏览器档案、登录会话、设置和模板；本地项目文件夹无需改名。
+开发调试变量优先使用 `MISONG_DEBUG`，仍兼容 `NDE_DEBUG`。
 
 ## 许可证
 

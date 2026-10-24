@@ -8,7 +8,7 @@ import shutil
 
 import pytest
 
-from nde.encoders import mojibake
+from misong.encoders import mojibake
 
 PLAIN = "提取码：ab12"
 V355_WENYAN_DEFAULT = "进鹂而返之者，非其云谨也。读绿书，裳和曲慧，乃允见。道冰惟微，谓微妙而难去也。以雅树为韵者，铃应弗而返之。非书也，彩鸢曾定。"

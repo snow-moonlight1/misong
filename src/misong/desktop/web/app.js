@@ -1,5 +1,5 @@
 "use strict";
-/* NDE desktop front end. Talks to the Python Api via window.pywebview.api. */
+/* MISONG desktop front end. Talks to the Python Api via window.pywebview.api. */
 (function () {
 const ICONS = window.ICONS || {};
 const $ = (s, r = document) => r.querySelector(s);
@@ -30,7 +30,7 @@ let API = null;
 const ready = new Promise((res) => {
   if (window.pywebview && window.pywebview.api) return res(window.pywebview.api);
   window.addEventListener("pywebviewready", () => res(window.pywebview.api), { once: true });
-  setTimeout(() => { if (!window.pywebview || !window.pywebview.api) res(window.__NDE_MOCK__ || null); }, 1500);
+  setTimeout(() => { if (!window.pywebview || !window.pywebview.api) res(window.__MISONG_MOCK__ || null); }, 1500);
 });
 async function call(method, ...args) {
   if (!API) { API = await ready; }
@@ -96,7 +96,7 @@ function paintIcons(root = document) {
 }
 
 /* expose for drag-drop from Python */
-window.ndeDrop = (paths) => { if (window.__onDrop) window.__onDrop(paths); };
+window.misongDrop = (paths) => { if (window.__onDrop) window.__onDrop(paths); };
 
 /* ---------- reusable widgets ---------- */
 function fileList(items, onRemove) {
@@ -448,7 +448,7 @@ async function addPaths(target, paths, filesOnly) {
   described.forEach((d) => { if (!seen.has(d.path)) { target.push(d); seen.add(d.path); } });
 }
 
-window.__NDE_APP__ = { S, call, toast };
+window.__MISONG_APP__ = { S, call, toast };
 
 /* ======================================================================
    PAGE: pipeline / pack / upload share a files+config+run layout

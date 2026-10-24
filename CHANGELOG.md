@@ -2,7 +2,11 @@
 
 ## Unreleased
 
-- 新增 `nde --version`；增加[路线图](docs/roadmap.md)、GitHub Actions 测试工作流、issue 与 PR 模板。
+- 项目更名为密送（Misong）：发行包、CLI、Python 包与桌面界面统一使用新名称。
+  新写 `.misong.json`、`.misongsplit.json`、`misong-task.json`；兼容旧版清单、任务、文案和调试变量，
+  保留原 `rpa/state/` 中的会话、设置与模板。第三方文件仅随包目录移动，内容不变。
+
+- 新增 `misong --version`；增加[路线图](docs/roadmap.md)、GitHub Actions 测试工作流、issue 与 PR 模板。
 
 - 修复持久浏览器档案关闭后丢失会话 Cookie、下次登录无法使用已验证快照的问题；认证导航前补回缺失的会话 Cookie，保留档案现有 Cookie 与来源存储，不延长 Cookie 或服务端会话寿命。
 
@@ -46,7 +50,7 @@
 
 ## 0.1.0 — 首个公开版本
 
-- 多层打包：archive / cover / split / rename 四类层，`.nde.json` v2 清单（兼容 v1），无清单嗅探还原。
+- 多层打包：archive / cover / split / rename 四类层，`.misong.json` v2 清单（兼容 v1），无清单嗅探还原。
 - 门面视频：7z/ZIP 嵌入 MP4 开头 free box，支持 >4GB（co64 / ZIP64）。
 - `.001/.002` 字节分卷与校验合卷；可选标准 `.sha256`；打包前空间与耗时预检。
 - 六个网盘（夸克、飞猫、百度、UC、迅雷、123）网页自动上传与分享；多盘发布、统一分享设置、

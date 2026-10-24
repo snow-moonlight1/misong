@@ -39,7 +39,7 @@ def _bind_drop(window):
         files = (event.get("dataTransfer") or {}).get("files") or []
         paths = [f.get("pywebviewFullPath") for f in files if f.get("pywebviewFullPath")]
         if paths:
-            window.evaluate_js(f"window.ndeDrop && window.ndeDrop({json.dumps(paths, ensure_ascii=False)})")
+            window.evaluate_js(f"window.misongDrop && window.misongDrop({json.dumps(paths, ensure_ascii=False)})")
     try:
         window.dom.document.events.drop += DOMEventHandler(on_drop, True, True)
     except Exception:  # noqa: BLE001 - drag and drop is optional; pickers still work
@@ -53,12 +53,12 @@ def main(debug: bool | None = None) -> int:
         raise MissingWebView('缺少 pywebview：运行 .venv\\Scripts\\python -m pip install -e ".[gui]"') from exc
     _dpi_aware()
     api = Api()
-    window = webview.create_window("NDE 资源发布台", url=str(WEB / "index.html"), js_api=api,
+    window = webview.create_window("密送（Misong）资源发布台", url=str(WEB / "index.html"), js_api=api,
                                    width=1320, height=880, min_size=(1100, 720),
                                    background_color="#F7F6F3", text_select=True)
     api._attach(window)
     window.events.closing += api._on_closing
-    debug = bool(os.environ.get("NDE_DEBUG")) if debug is None else debug
+    debug = bool(os.environ.get("MISONG_DEBUG", os.environ.get("NDE_DEBUG"))) if debug is None else debug
     webview.start(_bind_drop, window, debug=debug, private_mode=True)
     return 0
 

@@ -8,7 +8,7 @@
 双击仓库根目录 `start-gui.cmd`，或：
 
 ```powershell
-.venv\Scripts\python nde.py gui
+.venv\Scripts\python misong.py gui
 ```
 
 桌面端用 pywebview（Windows 上为 Edge WebView2）渲染本地 HTML/CSS/JS，开启高 DPI 感知，
@@ -36,7 +36,7 @@
 
 - **发布命名**：一条龙第 1 步、单独上传的文件区可填写“任务名称”和“网盘目录名”。
   任务名称最多 120 字，留空取资源名；目录名最多 100 字，仅接受单个目录名，不能填写路径。
-  目录留空仍自动生成 `nde-<任务id>-body-<盘名>`。自定义名称在每个本体盘使用同名目录，
+  目录留空仍自动生成 `misong-<任务id>-body-<盘名>`。自定义名称在每个本体盘使用同名目录，
   中转第一跳加 `-hop`；已有同名目录会停止，避免混入旧文件，请换一个新名称。
   续跑保持原名称；“复用设置”会清空这两项，避免新任务重复使用旧目录。任务中心后续重命名只改标题。
 
@@ -54,7 +54,7 @@
   若要最终上传多个分卷，请把split放在最后一层。执行记录显示每个分卷层的实际输入大小、阈值和卷数（或未分卷原因）。
 - **空间/耗时预检**：每次开始前显示中间空间GB、总读写GB和预计分钟（150MB/s粗估）；每层完成清理上层临时文件，
   峰值约2–3份资源，ZIP重定位含额外暂存，层数增加主要影响读写与耗时。目标盘不足自动换最大可用本地盘，全部不足则禁用开始。
-- **只上传最终产物**：`.nde.json`、`.ndesplit.json`、RESTORE.txt只留本地；附带校验文件默认关，开启才额外上传标准`.sha256`。
+- **只上传最终产物**：`.misong.json`、`.misongsplit.json`、RESTORE.txt只留本地；附带校验文件默认关，开启才额外上传标准`.sha256`。
   单独上传也排除这些本地元信息，开启校验则重新生成本批文件的校验文本。
 - 右侧摘要列出“还缺：…”清单，缺项时按钮不可点。进入下一步或开始前检查密码：所有层都没填时提示
   “没有设置任何密码”（确认后按仅压缩继续）；模板要求加密的层有部分没填时提示“还有加密层没填密码”，
@@ -62,16 +62,16 @@
 - **任务中心**：按名称/备注/网盘搜索，“收藏”筛选；重命名与备注写入任务元信息；
   仅在选中任务详情保留“打开当前任务目录”，打开该任务的文件夹；一条龙的最终产物在其body子目录。
   删除 `runs/` 内任务会把目录移到系统回收站（运行中的任务拒绝删除），导入的外部任务只从列表移除、不动文件；
-  “导入”可登记含 `relay-plan.json`、`nde-task.json` 或 `*.nde.json` 的文件夹（登记在 `rpa/state/ui-tasks.json`）；
+  “导入”可登记含 `relay-plan.json`、`misong-task.json` 或 `*.misong.json` 的文件夹（登记在 `rpa/state/ui-tasks.json`）；
   “复用设置”按任务记录的层/伪装/网盘等设置预填新任务（密码需重新填写）。上次中断原因以中文显示。
 
 单独上传同样生成 v2 `relay-plan.json`，暂停/失败后在任务中心续跑；单独打包在输出目录写
-`nde-task.json` 元信息。任务在后台线程执行，同一时间只允许一个；进度只显示真实阶段与文件数。
+`misong-task.json` 元信息。任务在后台线程执行，同一时间只允许一个；进度只显示真实阶段与文件数。
 暂停上传会保留已确认文件的检查点；本地压缩只能在该阶段结束后响应暂停。任务运行中关闭窗口会先暂停，
 检查点保存后自动关闭。密码和魔曰密钥只在内存中使用；界面偏好存入 `rpa/state/ui-settings.json`，不含密码。
 
-- `nde.py gui --debug`（或环境变量 `NDE_DEBUG=1`）打开 WebView 开发者工具。
-- `nde.py gui --legacy` 使用旧版 Tk 界面；未安装 pywebview 时也会自动回退到旧版。
+- `misong.py gui --debug`（或环境变量 `MISONG_DEBUG=1`）打开 WebView 开发者工具。
+- `misong.py gui --legacy` 使用旧版 Tk 界面；未安装 pywebview 时也会自动回退到旧版。
 - 视觉检查：`.venv\Scripts\python scripts\ui_preview.py [--dark]` 用模拟数据在无头 Edge 中截取各页面到 `tmp/ui`。
 
 若从新环境安装：
@@ -87,11 +87,11 @@ Windows 上 Node 子进程以 `CREATE_NO_WINDOW` 启动，生成魔曰文案时�
 ## 登录与状态
 
 ```powershell
-.venv\Scripts\python nde.py account login quark
-.venv\Scripts\python nde.py account login baidu
-.venv\Scripts\python nde.py account login feimao
-.venv\Scripts\python nde.py account login feimao --browser chrome
-.venv\Scripts\python nde.py account status
+.venv\Scripts\python misong.py account login quark
+.venv\Scripts\python misong.py account login baidu
+.venv\Scripts\python misong.py account login feimao
+.venv\Scripts\python misong.py account login feimao --browser chrome
+.venv\Scripts\python misong.py account status
 ```
 
 首次在浏览器里登录。检测成功后保存本机状态，**登录窗口保留到你主动关闭**。
@@ -158,7 +158,7 @@ CLI 单选百度也可使用 `--share-expiry 365 --share-access code`；其他�
 百度接收方匿名可打开分享、输码查看目录，但下载要求登录百度账号，这是平台限制。
 
 ```powershell
-.venv\Scripts\python nde.py publish MyRes -L zip --body-disks uc,xunlei,123pan --share-expiry 7 --share-access code -o runs/multi-release
+.venv\Scripts\python misong.py publish MyRes -L zip --body-disks uc,xunlei,123pan --share-expiry 7 --share-access code -o runs/multi-release
 ```
 
 原有 `--body-disk` 单盘参数继续可用。直接发布将所有本体链接编成同一段文案；
@@ -170,11 +170,11 @@ CLI 单选百度也可使用 `--share-expiry 365 --share-access code`；其他�
 ## 单命令直接发布
 
 ```powershell
-.venv\Scripts\python nde.py publish MyRes -L 'lz4,zip,7z' '-P=-,innerPW,outerPW' `
+.venv\Scripts\python misong.py publish MyRes -L 'lz4,zip,7z' '-P=-,innerPW,outerPW' `
   --disguise .mp4 -s 1900M --body-disk quark -o runs/my-release
 ```
 
-可用 `--task-name "第八期资源" --folder-name "nde-release-08"` 分别指定任务标题和新建网盘目录名。
+可用 `--task-name "第八期资源" --folder-name "misong-release-08"` 分别指定任务标题和新建网盘目录名。
 两项均可省略，续跑 `--plan` 不接受覆盖名称；自定义目录与已有目录重名会停止上传。
 
 输出目录必须不存在；不会覆盖旧任务。命令行密码会进入 shell 历史，GUI 适合日常输入。
@@ -185,7 +185,7 @@ PowerShell 中密码链含逗号、且以 `-` 开头时，请像示例那样引�
 需要真实视频外观：
 
 ```powershell
-.venv\Scripts\python nde.py publish MyRes -L zip -P myPW --video intro.mp4 `
+.venv\Scripts\python misong.py publish MyRes -L zip -P myPW --video intro.mp4 `
   -s 1900M --body-disk quark -o runs/video-release
 # 门面视频自动嵌入开头并修正偏移；--raw旧参数兼容但不再改变发布行为。
 ```
@@ -198,12 +198,12 @@ PowerShell 中密码链含逗号、且以 `-` 开头时，请像示例那样引�
 
 ```powershell
 # 本体先传夸克，取得链接后回填 guide.txt，再把 guide.txt 上传第一跳。
-.venv\Scripts\python nde.py publish MyRes -L 'lz4,7z' '-P=-,outerPW' `
+.venv\Scripts\python misong.py publish MyRes -L 'lz4,7z' '-P=-,outerPW' `
   --form simple --body-disk quark --hop-disk feimao `
   --pwd-hint "解压密码见视频第30秒" -o runs/relay-simple
 
 # 复杂中转：第一跳上传加密文件名的 guide.7z，内含填好链接的 guide.txt。
-.venv\Scripts\python nde.py publish MyRes -L 7z -P outerPW `
+.venv\Scripts\python misong.py publish MyRes -L 7z -P outerPW `
   --form complex --hop-password hopPW --body-disk quark --hop-disk feimao `
   -o runs/relay-complex
 ```
@@ -219,8 +219,8 @@ PowerShell 中密码链含逗号、且以 `-` 开头时，请像示例那样引�
 ## 仅本地准备、续跑与手动回填
 
 ```powershell
-.venv\Scripts\python nde.py publish MyRes -L 'lz4,7z' '-P=-,outerPW' --prepare -o runs/prepared
-.venv\Scripts\python nde.py publish --plan runs/prepared/relay-plan.json
+.venv\Scripts\python misong.py publish MyRes -L 'lz4,7z' '-P=-,outerPW' --prepare -o runs/prepared
+.venv\Scripts\python misong.py publish --plan runs/prepared/relay-plan.json
 # 复杂版续跑仍须提供 --hop-password，密码不会写入计划。
 ```
 
@@ -236,14 +236,14 @@ SHA-256，文件改变则拒绝复用旧任务。任务和账号都持有操作�
 将分享弹窗文本保存为文件，然后回填：
 
 ```powershell
-.venv\Scripts\python nde.py share-import --plan runs/prepared/relay-plan.json `
+.venv\Scripts\python misong.py share-import --plan runs/prepared/relay-plan.json `
   --stage body --file share.txt
-.venv\Scripts\python nde.py publish --plan runs/prepared/relay-plan.json
+.venv\Scripts\python misong.py publish --plan runs/prepared/relay-plan.json
 ```
 
 GUI 也提供“手动回填分享”。替换本体链接时，下游 guide 和第一跳上传会失效并重新生成，
 使用新目录以免复用旧说明。程序不会撤销已经发出的旧分享，旧链接按平台设置的有效期处理。
-原有 `nde relay` 的 version 1 占位模板继续保留；新的发布使用 version 2，拒绝自动上传
+原有 `misong relay` 的 version 1 占位模板继续保留；新的发布使用 version 2，拒绝自动上传
 旧模板中的占位内容。
 
 ## 结果与还原
@@ -253,8 +253,8 @@ GUI 也提供“手动回填分享”。替换本体链接时，下游 guide 和
   relay-plan.json         逐文件进度及分享信息（不含归档密码和魔曰密钥）
   body/                  最终文件或 .001/.002 分卷（仅这些上传）
     *.sha256             可选，开启后才额外上传
-    *.nde.json           本地v2完整层序（兼容v1），不上传
-    *.ndesplit.json       本地逐卷校验清单，不上传
+    *.misong.json           本地v2完整层序（兼容v1），不上传
+    *.misongsplit.json       本地逐卷校验清单，不上传
     RESTORE.txt          本地还原说明，不上传
   guide.txt / guide.7z    选用中转时才生成
   copy/
@@ -264,9 +264,9 @@ GUI 也提供“手动回填分享”。替换本体链接时，下游 guide 和
     share-plain.txt      便于核对的原始分享文本
 ```
 
-接收方步骤详见[接收方指南](receiver-guide.md)。简要：先解开链接文案，取回全部最终文件/分卷；可从`.001`用7-Zip/WinRAR打开，或`nde join 第一卷.001`。
-有清单时`nde unest 第一卷.001 -o restored -P="外到内密码链"`，密码对齐所有层，非归档层用`-`占位；
-没有清单时`nde unwrap 第一卷.001 -o restored --chain-pwd="归档密码链"`，只对齐归档层，自动嗅探连剥。
+接收方步骤详见[接收方指南](receiver-guide.md)。简要：先解开链接文案，取回全部最终文件/分卷；可从`.001`用7-Zip/WinRAR打开，或`misong join 第一卷.001`。
+有清单时`misong unest 第一卷.001 -o restored -P="外到内密码链"`，密码对齐所有层，非归档层用`-`占位；
+没有清单时`misong unwrap 第一卷.001 -o restored --chain-pwd="归档密码链"`，只对齐归档层，自动嗅探连剥。
 本地清单v2记录全部层序，v1继续可还原，模板及旧任务设置自动迁移。GUI 的“链接编解码”可以离线完成三种方案互转；自定义魔曰密钥
 在该页填写，同样用于发布文案。默认密钥与既有 CLI 一致。
 
@@ -281,7 +281,7 @@ GUI 也提供“手动回填分享”。替换本体链接时，下游 guide 和
 
 ## 内置7-Zip与离线兼容验证
 
-内置官方7-Zip Extra 26.04 x64的独立`src/nde/vendor/7zip/7za.exe`，以无窗口子进程调用；
+内置官方7-Zip Extra 26.04 x64的独立`src/misong/vendor/7zip/7za.exe`，以无窗口子进程调用；
 分发必须同时附带原始License.txt与来源README，二进制未修改。定位为内置7za（亦识别7z+DLL布局）→
 已安装7-Zip→Python库回退。7za不支持RAR解码，原生RAR分卷/SFX不在当前范围。
 

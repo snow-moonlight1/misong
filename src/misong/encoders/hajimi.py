@@ -10,7 +10,7 @@ Interoperability is validated against the vendored JS reference in tests.
 Portions translated from hachimi-wonameruto-translator,
 Copyright (c) 2025 Starpuccino, MIT License (full text in
 THIRD_PARTY_NOTICES.md). This file as a whole is distributed under
-GPL-3.0-or-later together with the rest of NDE.
+GPL-3.0-or-later together with the rest of MISONG.
 """
 
 from __future__ import annotations

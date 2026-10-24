@@ -5,7 +5,7 @@ import threading
 
 import pytest
 
-from nde import jobs
+from misong import jobs
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows open handles deny replacement")

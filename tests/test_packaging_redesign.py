@@ -11,12 +11,12 @@ from pathlib import Path
 import py7zr
 import pytest
 
-from nde import formats, merge, pack, split
-from nde.layers import LayerSpec as L, validate
-from nde.mp4 import box_header, rewrite_moov, relocate_zip, zip_directory
+from misong import formats, merge, pack, split
+from misong.layers import LayerSpec as L, validate
+from misong.mp4 import box_header, rewrite_moov, relocate_zip, zip_directory
 
-# ffmpeg is optional: PATH first, then NDE_FFMPEG=<path to ffmpeg executable>.
-FFMPEG = shutil.which("ffmpeg") or os.environ.get("NDE_FFMPEG", "")
+# ffmpeg is optional: PATH first, then MISONG_FFMPEG=<path to ffmpeg executable>.
+FFMPEG = shutil.which("ffmpeg") or os.environ.get("MISONG_FFMPEG", os.environ.get("NDE_FFMPEG", ""))
 
 
 @pytest.fixture
@@ -186,8 +186,8 @@ def test_v1_manifest_and_keep_layers(tmp_path):
 
 @pytest.mark.parametrize("checksum", [False, True])
 def test_publish_only_final_files_and_checksums(tmp_path, checksum):
-    from nde.publish import PublishOptions, prepare
-    from nde import workflows
+    from misong.publish import PublishOptions, prepare
+    from misong import workflows
     src = tmp_path / "input.bin"
     src.write_bytes(bytes(range(256)) * 20)
     plan = prepare(PublishOptions([src], tmp_path / "job", [L("zip", level=0)],
@@ -202,15 +202,15 @@ def test_publish_only_final_files_and_checksums(tmp_path, checksum):
         for p in files:
             if p.suffix != ".sha256":
                 assert f"{pack._sha256(p)}  {p.name}\n" in text
-    assert list(plan.parent.rglob("*.nde.json"))
+    assert list(plan.parent.rglob("*.misong.json"))
     assert list(plan.parent.rglob("RESTORE.txt"))
 
 
 @pytest.mark.parametrize("checksum", [False, True])
 def test_upload_filters_local_sidecars(tmp_path, checksum):
-    from nde import workflows
+    from misong import workflows
     files = []
-    for name in ("a.7z.001", "a.7z.002", "a.nde.json", "a.ndesplit.json", "RESTORE.txt", "a.sha256"):
+    for name in ("a.7z.001", "a.7z.002", "a.misong.json", "a.misongsplit.json", "RESTORE.txt", "a.sha256"):
         p = tmp_path / name
         p.write_bytes(b"test")
         files.append(p)
@@ -221,7 +221,7 @@ def test_upload_filters_local_sidecars(tmp_path, checksum):
 
 def test_space_preflight_blocks_and_uses_largest_disk(tmp_path, monkeypatch):
     from collections import namedtuple
-    from nde import preflight
+    from misong import preflight
     src = tmp_path / "src.bin"
     src.write_bytes(b"data")
     usage = namedtuple("Usage", "total used free")
@@ -236,12 +236,12 @@ def test_space_preflight_blocks_and_uses_largest_disk(tmp_path, monkeypatch):
     monkeypatch.setattr(preflight.shutil, "disk_usage", lambda path: usage(10**12, 0, 10**12 if Path(path) == alternate else 1))
     report = preflight.estimate([src], [L("zip")], tmp_path / "job")
     assert report["ok"] and report["relocated"]
-    assert Path(report["out"]) == alternate / "nde-runs" / "job"
+    assert Path(report["out"]) == alternate / "misong-runs" / "job"
     assert "总读写" in report["message"] and "预计约" in report["message"]
 
 
 def test_preflight_peak_does_not_multiply_by_layer_count(tmp_path):
-    from nde.preflight import estimate
+    from misong.preflight import estimate
     src = tmp_path / "large.bin"
     with src.open("wb") as f:
         f.truncate(20 * 1024**2)
@@ -252,7 +252,7 @@ def test_preflight_peak_does_not_multiply_by_layer_count(tmp_path):
 
 
 def test_api_new_templates_and_settings_strip_passwords(tmp_path, video):
-    from nde.desktop.api import Api
+    from misong.desktop.api import Api
     api = Api(tmp_path / "runs", tmp_path / "state")
     assert api._layers([{"fmt": "7z", "password": "test-only"}])[0].header_enc
     assert not api._layers([{"fmt": "7z"}])[0].header_enc
@@ -270,8 +270,8 @@ def test_api_new_templates_and_settings_strip_passwords(tmp_path, video):
 
 
 def test_api_preflight_blocks_before_background_job(tmp_path, monkeypatch):
-    from nde.desktop.api import Api
-    from nde import preflight
+    from misong.desktop.api import Api
+    from misong import preflight
     api = Api(tmp_path / "runs", tmp_path / "state")
     src = tmp_path / "src.txt"
     src.write_text("payload")

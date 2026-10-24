@@ -62,7 +62,7 @@ def estimate(inputs, layers, out, *, keep_layers=False):
             if free > largest:
                 largest, best = free, Path(root)
         if best and largest >= required:
-            selected = best / "nde-runs" / target.name
+            selected = best / "misong-runs" / target.name
     ok = largest >= required
     minutes = max(0.1, io / (150 * 1024**2) / 60)
     message = f"本次约需中间空间 {required / GB:.2f} GB，总读写约 {io / GB:.2f} GB，预计约 {minutes:.1f} 分钟"

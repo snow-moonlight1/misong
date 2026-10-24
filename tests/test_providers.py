@@ -1,8 +1,8 @@
 """Provider coverage identifies link support separately from live driver verification."""
 import pytest
 
-from nde.providers import disk_name, PROVIDERS
-from nde.sharing import parse_share
+from misong.providers import disk_name, PROVIDERS
+from misong.sharing import parse_share
 
 
 @pytest.mark.parametrize("name,canonical", [

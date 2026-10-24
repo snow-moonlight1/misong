@@ -294,7 +294,7 @@ def extract(fmt_key: str, src: Path, workdir: Path, password: str | None = None)
         if f.key in ("7z", "zip"):
             out = Path(workdir).resolve() / "extracted"
             out.mkdir(parents=True, exist_ok=True)
-            if _sevenzip(["x", "-y", "-bd", "-p" + (password or "__NDE_NO_PASSWORD__"),
+            if _sevenzip(["x", "-y", "-bd", "-p" + (password or "__MISONG_NO_PASSWORD__"),
                           "-o" + str(out), "--", str(Path(src).resolve())]):
                 tops = list(out.iterdir())
                 if len(tops) != 1:

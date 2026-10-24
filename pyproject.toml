@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "netdisk-encrypt"
+name = "misong"
 version = "0.1.0"
 description = "Private backup and encrypted sharing toolbox for netdisks: nested encrypted archives, volume splitting, MP4 cover containers, share-text encoders and a desktop publishing GUI."
 readme = "README.md"
@@ -28,8 +28,8 @@ rpa = ["playwright>=1.51,<2"]
 gui = ["pywebview>=5"]
 
 [project.scripts]
-nde = "nde.cli:main"
-nde-gui = "nde.desktop.main:launch"
+misong = "misong.cli:main"
+misong-gui = "misong.desktop.main:launch"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -38,9 +38,9 @@ testpaths = ["tests"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-"nde" = [
+"misong" = [
     "vendor/7zip/7za.exe", "vendor/7zip/License.txt", "vendor/7zip/README.txt",
     "vendor/abracadabra/abracadabra-cn.mjs", "vendor/abracadabra/LICENSE", "vendor/abracadabra/README.md",
 ]
-"nde.encoders" = ["abra_bridge.mjs"]
-"nde.desktop" = ["web/*", "web/disks/*"]
+"misong.encoders" = ["abra_bridge.mjs"]
+"misong.desktop" = ["web/*", "web/disks/*"]

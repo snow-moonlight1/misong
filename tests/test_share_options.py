@@ -3,8 +3,8 @@ import json
 
 import pytest
 
-from nde.share_options import ShareOptions, common_options
-from nde.rpa.drivers import REGISTRY
+from misong.share_options import ShareOptions, common_options
+from misong.rpa.drivers import REGISTRY
 
 
 def test_intersection_follows_selected_providers():
@@ -20,7 +20,7 @@ def test_intersection_follows_selected_providers():
 
 
 def test_visible_publishing_login_does_not_close_while_waiting():
-    from nde.rpa.runtime import BrowserRuntime
+    from misong.rpa.runtime import BrowserRuntime
     assert BrowserRuntime().login_timeout is None
     assert BrowserRuntime(headless=True).login_timeout == 30
 
@@ -146,7 +146,7 @@ def test_feimao_share_menu_outside_dialog():
 
 def test_gui_choices_update_and_restore_previous_available_options():
     import tkinter as tk
-    from nde.gui import App
+    from misong.gui import App
     root = tk.Tk()
     root.withdraw()
     try:

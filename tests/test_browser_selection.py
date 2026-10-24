@@ -1,9 +1,9 @@
 """Browser choices persist per account without sharing a personal browser profile."""
 import pytest
 
-from nde.cli import build_parser
-from nde.jobs import save_json
-from nde.rpa.runtime import BrowserRuntime
+from misong.cli import build_parser
+from misong.jobs import save_json
+from misong.rpa.runtime import BrowserRuntime
 
 
 def test_choice_is_per_account_and_explicit_option_wins(tmp_path):
@@ -28,10 +28,10 @@ def test_cli_accepts_official_browser(args):
 
 
 def test_session_storage_origin_is_limited_to_approved_hosts_and_transport():
-    profile = {"url": "https://www.nde.test/", "hosts": ["nde.test", "nde-alias.test"]}
+    profile = {"url": "https://www.misong.test/", "hosts": ["misong.test", "misong-alias.test"]}
     origin = BrowserRuntime._session_origin
-    assert origin(profile, "https://nde.test/files") == "https://nde.test"
-    assert origin(profile, "https://www.nde-alias.test/files") == "https://www.nde-alias.test"
-    for url in ("https://unrelated.test/", "https://other.nde.test/", "http://nde.test/",
-                "https://nde.test:8443/", "https://user@nde.test/", "https://nde.test:invalid/"):
+    assert origin(profile, "https://misong.test/files") == "https://misong.test"
+    assert origin(profile, "https://www.misong-alias.test/files") == "https://www.misong-alias.test"
+    for url in ("https://unrelated.test/", "https://other.misong.test/", "http://misong.test/",
+                "https://misong.test:8443/", "https://user@misong.test/", "https://misong.test:invalid/"):
         assert origin(profile, url) is None

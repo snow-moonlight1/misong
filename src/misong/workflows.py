@@ -19,8 +19,10 @@ from .jobs import fingerprint, save_json
 from .providers import PROVIDERS
 from .share_options import ShareOptions
 from .sharing import COPY_SCHEMES, disk_name
+from .metadata import MANIFEST_EXTS, SPLIT_EXTS, TASK_NAMES
 
-META_NAME = "nde-task.json"
+META_NAMES = TASK_NAMES
+META_NAME = META_NAMES[0]
 # Fixed list offered by the UI: common media suffixes that netdisks accept without re-encoding.
 DISGUISE_EXTS = (".mp4", ".mkv", ".mov", ".avi", ".png", ".jpg")
 
@@ -31,15 +33,15 @@ def write_meta(folder: Path, kind: str, title: str, **extra) -> None:
 
 
 def read_meta(folder: Path) -> dict:
-    path = Path(folder) / META_NAME
+    path = next((Path(folder) / name for name in META_NAMES if (Path(folder) / name).is_file()), None)
     try:
-        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        return json.loads(path.read_text(encoding="utf-8")) if path is not None else {}
     except ValueError:
         return {}
 
 
 def update_meta(folder: Path, **changes) -> dict:
-    """Merge fields into nde-task.json, keeping kind/created of an existing task."""
+    """Merge fields into misong-task.json, keeping kind/created of an existing task."""
     data = read_meta(folder)
     data.update(changes)
     save_json(Path(folder) / META_NAME, data)
@@ -67,7 +69,7 @@ def publication_names(task_name="", folder_name="") -> tuple[str, str]:
 
 def upload_stage(job_id, disk, records, index=0, folder_name=""):
     return {"id": "body" if index == 0 else "body-" + disk, "role": "body", "disk": disk,
-            "folder": folder_name or f"nde-{job_id}-body-{disk}", "files": records,
+            "folder": folder_name or f"misong-{job_id}-body-{disk}", "files": records,
             "state": "pending", "uploaded": {}, **({"custom_folder": True} if folder_name else {})}
 
 
@@ -131,18 +133,18 @@ def write_checksums(files, path):
 
 def is_local_metadata(path):
     name = Path(path).name.lower()
-    return (name.endswith((".nde.json", ".ndesplit.json")) or
-            name in ("restore.txt", "nde-task.json", "relay-plan.json"))
+    return (name.endswith((*MANIFEST_EXTS, *SPLIT_EXTS)) or
+            name in ("restore.txt", *META_NAMES, "relay-plan.json"))
 
 
 def write_restore(target, first, manifest):
     chain = ",".join(r.get("format", r["type"]) for r in manifest["layers"])
     Path(target, "RESTORE.txt").write_text(
         "【还原说明 · 本地保留】\n下载全部最终产物/分卷到同一目录。\n"
-        f'有清单：nde unest "{first.name}" -o restored -P="外层到内层密码链"\n'
-        f'无清单：nde unwrap "{first.name}" -o restored --chain-pwd="归档层外到内密码链"\n'
+        f'有清单：misong unest "{first.name}" -o restored -P="外层到内层密码链"\n'
+        f'无清单：misong unwrap "{first.name}" -o restored --chain-pwd="归档层外到内密码链"\n'
         "unest 每层对齐，cover/split/rename 用 - 占位；unwrap 只对齐归档层。\n"
-        "分卷也可先 nde join 第一卷.001，再解包；7-Zip / WinRAR 从 .001 打开。\n"
+        "分卷也可先 misong join 第一卷.001，再解包；7-Zip / WinRAR 从 .001 打开。\n"
         f"完整层序（外到内）：{chain}\n清单、RESTORE.txt 只留本地；密码请单独告知接收方。\n",
         encoding="utf-8")
 

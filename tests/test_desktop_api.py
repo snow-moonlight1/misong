@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from nde import pack, workflows
-from nde.desktop.api import Api
-from nde.sharing import ShareInfo
+from misong import pack, workflows
+from misong.desktop.api import Api
+from misong.sharing import ShareInfo
 
 
 class FakeRuntime:
@@ -204,7 +204,7 @@ def test_v2_split_through_gui_bridge(api, tmp_path, kind, scenario):
     assert event["state"] == "done", event["error"]
     result = event["result"]
     folder = Path(result["out"]) if kind == "pack" else Path(result["plan"]).parent / "body"
-    manifest = json.loads(next(folder.glob("*.nde.json")).read_text(encoding="utf-8"))
+    manifest = json.loads(next(folder.glob("*.misong.json")).read_text(encoding="utf-8"))
     sm = next(r["split_manifest"] for r in manifest["layers"] if r["type"] == "split")
     assert sm["part_size"] == (3 if scenario == "below_threshold" else 1) * 1024**2
     assert sm["part_count"] == (1 if scenario == "below_threshold" else 3)
@@ -275,7 +275,7 @@ def test_single_job_lock(api, src):
 
 
 def test_templates_never_store_passwords_and_validate(api, tmp_path):
-    from nde.desktop.api import DEFAULT_TEMPLATES
+    from misong.desktop.api import DEFAULT_TEMPLATES
     defaults = [t["name"] for t in DEFAULT_TEMPLATES]
     assert [t["name"] for t in ok(api.templates())] == defaults  # built-ins are seeded on first run
     for name in defaults:
@@ -299,7 +299,7 @@ def test_templates_never_store_passwords_and_validate(api, tmp_path):
 
 
 def test_default_templates_are_deletable_and_restorable(api, tmp_path):
-    from nde.desktop.api import DEFAULT_TEMPLATES
+    from misong.desktop.api import DEFAULT_TEMPLATES
     defaults = [t["name"] for t in DEFAULT_TEMPLATES]
     assert ok(api.bootstrap())["default_templates"] == defaults
     first = ok(api.templates())[0]
@@ -327,7 +327,7 @@ def test_disguise_whitelist(api, src, tmp_path):
 
 
 def test_error_messages_are_readable():
-    from nde.desktop.api import error_text, friendly_error
+    from misong.desktop.api import error_text, friendly_error
     assert error_text({"type": "DriverBlocked", "stage": "body"}) == "网盘页面操作受阻（本体上传）"
     assert "[object" not in error_text({"type": "X"}) and error_text(None) == ""
     text = friendly_error("Page.goto: net::ERR_TIMED_OUT at https://drive.uc.cn/list\nCall log:")
@@ -372,7 +372,7 @@ def test_plan_error_dict_becomes_text(api, src):
 def test_delete_task_uses_recycle_bin(api, src, monkeypatch):
     import shutil
     trashed = []
-    monkeypatch.setattr("nde.desktop.api._trash", lambda p: (trashed.append(p), shutil.rmtree(p)))
+    monkeypatch.setattr("misong.desktop.api._trash", lambda p: (trashed.append(p), shutil.rmtree(p)))
     folder = _finished_pack(api, src)
     assert "只能管理" in api.delete_task(str(src))["error"]
     assert ok(api.delete_task(folder))["trashed"] is True
@@ -388,13 +388,13 @@ def test_import_external_task_folder(api, src, tmp_path, monkeypatch):
     assert task["kind"] == "pack" and task["imported"] and task["chain"] == "zip"
     assert [t["dir"] for t in ok(api.list_tasks())] == [str(out.resolve())]
     ok(api.update_task(str(out), {"starred": True}))
-    monkeypatch.setattr("nde.desktop.api._trash", lambda p: pytest.fail("imported folders must not be trashed"))
+    monkeypatch.setattr("misong.desktop.api._trash", lambda p: pytest.fail("imported folders must not be trashed"))
     assert ok(api.delete_task(str(out)))["trashed"] is False
     assert out.exists() and ok(api.list_tasks()) == []
 
 
 def test_accounts_report_single_owner_facing_state(api, tmp_path):
-    from nde.rpa.runtime import BrowserRuntime
+    from misong.rpa.runtime import BrowserRuntime
     state = tmp_path / "state"
     state.mkdir()
     runtime = BrowserRuntime(state_dir=state)
@@ -442,7 +442,7 @@ def test_task_history_restores_tested_state(api, tmp_path):
 
 def test_mojibake_node_runs_without_console_window(monkeypatch):
     import subprocess
-    from nde.encoders import mojibake
+    from misong.encoders import mojibake
     seen = {}
 
     def fake_run(cmd, **kwargs):
@@ -458,7 +458,7 @@ def test_mojibake_node_runs_without_console_window(monkeypatch):
 @pytest.mark.parametrize("kind", ["pipeline", "upload"])
 def test_publication_names_in_job_and_reopened_task(api, src, kind):
     source = src / "中文.txt"
-    cfg = {"task_name": "第八期 中文 🐈", "folder_name": "nde-第八期", "body_disks": ["quark"],
+    cfg = {"task_name": "第八期 中文 🐈", "folder_name": "misong-第八期", "body_disks": ["quark"],
            "schemes": ["beast"], "inputs": [str(source)], "files": [str(source)],
            "layers": [{"fmt": "zip", "password": "memory-only"}], "size": ""}
     job = ok(getattr(api, "start_pipeline" if kind == "pipeline" else "start_upload")(cfg))
@@ -471,7 +471,7 @@ def test_publication_names_in_job_and_reopened_task(api, src, kind):
     assert data["stages"][0]["folder"] == cfg["folder_name"]
     reopened = Api(api._runs, api._state)
     assert ok(reopened.list_tasks())[0]["title"] == cfg["task_name"]
-    assert "memory-only" not in (Path(task["dir"]) / "nde-task.json").read_text(encoding="utf-8")
+    assert "memory-only" not in (Path(task["dir"]) / "misong-task.json").read_text(encoding="utf-8")
 
 
 def test_invalid_names_rejected_before_background_job(api, src):

@@ -2,6 +2,6 @@
 
 # Third-party files are kept byte-for-byte identical to upstream
 # (licenses verbatim; the vendored 魔曰 build is pinned by SHA-256).
-src/nde/vendor/** -text -whitespace
-src/nde/vendor/7zip/7za.exe binary
+src/misong/vendor/** -text -whitespace
+src/misong/vendor/7zip/7za.exe binary
 LICENSE -text

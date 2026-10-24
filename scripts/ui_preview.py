@@ -19,9 +19,9 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from playwright.sync_api import sync_playwright  # noqa: E402
 
-from nde.desktop.api import Api  # noqa: E402
+from misong.desktop.api import Api  # noqa: E402
 
-WEB = ROOT / "src" / "nde" / "desktop" / "web" / "index.html"
+WEB = ROOT / "src" / "misong" / "desktop" / "web" / "index.html"
 FILES = {
     r"D:\资源\纪录片合集": {"name": "纪录片合集", "dir": True, "count": 12, "size": 7_450_000_000},
     r"D:\资源\S01E01.mkv": {"name": "S01E01.mkv", "dir": False, "size": 1_380_000_000},
@@ -44,7 +44,7 @@ class Fake:
         self.preflight_calls = 0
         self.output_choices = 0
         self.edits: dict[str, dict] = {
-            r"D:\nde\runs\a": {"starred": True, "note": "周末发群用，记得补 UC 中转", "error": "网盘页面操作受阻（本体上传）"},
+            r"D:\misong\runs\a": {"starred": True, "note": "周末发群用，记得补 UC 中转", "error": "网盘页面操作受阻（本体上传）"},
         }
         self.extra: list[dict] = []
         self.removed: set[str] = set()
@@ -58,20 +58,20 @@ class Fake:
 
     def tasks(self):
         base = [
-            {"plan": r"D:\nde\runs\a\relay-plan.json", "dir": r"D:\nde\runs\a", "kind": "pipeline", "title": "纪录片合集", "state": "uploading",
+            {"plan": r"D:\misong\runs\a\relay-plan.json", "dir": r"D:\misong\runs\a", "kind": "pipeline", "title": "纪录片合集", "state": "uploading",
              "created": "2026-10-18T21:40:00", "updated": "2026-10-18T22:10:00", "form": "simple", "stages": self.stages(2),
              "settings": {"layers": [{"fmt": "lz4", "locked": False}, {"fmt": "7z", "locked": True, "header_enc": True}], "disguise": "mp4", "size": "1900M",
                           "disks": ["quark", "123pan"], "form": "simple"}},
-            {"plan": r"D:\nde\runs\b\relay-plan.json", "dir": r"D:\nde\runs\b", "kind": "upload", "title": "S01E01.mkv 等 3 个文件", "state": "complete",
+            {"plan": r"D:\misong\runs\b\relay-plan.json", "dir": r"D:\misong\runs\b", "kind": "upload", "title": "S01E01.mkv 等 3 个文件", "state": "complete",
              "created": "2026-10-17T19:02:00", "form": "direct", "stages": [{"id": "body", "role": "body", "disk": "feimao", "label": "飞猫盘", "state": "shared", "done": 3, "total": 3}]},
-            {"plan": None, "dir": r"D:\nde\runs\c", "kind": "pack", "title": "字幕.zip", "state": "complete", "created": "2026-10-16T10:00:00", "chain": "lz4 → 7z🔒", "stages": []},
+            {"plan": None, "dir": r"D:\misong\runs\c", "kind": "pack", "title": "字幕.zip", "state": "complete", "created": "2026-10-16T10:00:00", "chain": "lz4 → 7z🔒", "stages": []},
         ]
         out = []
         for t in base + self.extra:
             if t["dir"] in self.removed:
                 continue
             t = {"starred": False, "note": "", "error": "", "imported": False, "settings": {}, **t, **self.edits.get(t["dir"], {})}
-            if self.live_state and t["dir"] == r"D:\nde\runs\a":
+            if self.live_state and t["dir"] == r"D:\misong\runs\a":
                 t["state"] = self.live_state
                 if self.live_state == "complete":
                     t["error"] = ""
@@ -122,7 +122,7 @@ class Fake:
             data = next(x for x in self.tasks() if x["dir"] == args[0])
         elif method == "preflight_pack":
             self.preflight_calls += 1
-            data = {"ok": not self.space_blocked, "required_bytes": 27_000_000_000, "out": r"D:\nde\runs\pending",
+            data = {"ok": not self.space_blocked, "required_bytes": 27_000_000_000, "out": r"D:\misong\runs\pending",
                     "message": "需要约 25.15 GB，当前最大可用盘仅 1 GB，请更换位置" if self.space_blocked else "本次约需中间空间 25.15 GB，总读写约 74.20 GB，预计约 8.4 分钟"}
         elif method == "pick_files":
             data = [r"D:\资源\intro.mp4"] if len(args) > 1 and args[1] else [r"D:\资源\S01E01.mkv", r"D:\资源\字幕.zip"]
@@ -135,7 +135,7 @@ class Fake:
         elif method in ("start_pipeline", "start_upload", "start_pack", "resume_task"):
             kind = {"start_pipeline": "pipeline", "start_upload": "upload", "start_pack": "pack"}.get(method, "pipeline")
             self.job = {"id": "j1", "kind": kind, "title": "发布 纪录片合集", "step": "上传 夸克网盘：S01E01.part2.mp4（2/4）",
-                        "plan": r"D:\nde\runs\a\relay-plan.json"}
+                        "plan": r"D:\misong\runs\a\relay-plan.json"}
             data = dict(self.job)
         elif method == "poll":
             job = dict(self.job) if self.job else None
@@ -158,16 +158,16 @@ class Fake:
         job, self.job = self.job, None
         if promote:
             self.live_state = "complete"
-        result = {"plan": r"D:\nde\runs\a\relay-plan.json", "copies": COPIES}
+        result = {"plan": r"D:\misong\runs\a\relay-plan.json", "copies": COPIES}
         if kind == "pack":
-            result = {"out": r"D:\nde\runs\c", "chain": "lz4 → 7z🔒", "files": [{"name": "纪录片合集.7z", "size": 7_300_000_000}],
+            result = {"out": r"D:\misong\runs\c", "chain": "lz4 → 7z🔒", "files": [{"name": "纪录片合集.7z", "size": 7_300_000_000}],
                       "parts": [{"name": f"纪录片合集.7z.{i:03d}", "size": 1_900_000_000} for i in range(1, 4)]}
         self.events.append({"type": "job", "state": "done", "job": job or {"kind": kind}, "result": result})
         self.events.append({"type": "log", "text": "夸克网盘：分享完成"})
 
 
 MOCK_JS = """
-window.__NDE_MOCK__ = new Proxy({}, { get: (_, m) => m === "then" ? undefined : (...args) => window.__py(m, args) });
+window.__MISONG_MOCK__ = new Proxy({}, { get: (_, m) => m === "then" ? undefined : (...args) => window.__py(m, args) });
 """
 
 
@@ -181,7 +181,7 @@ def main():
     ns = ap.parse_args()
     out = Path(ns.out)
     out.mkdir(parents=True, exist_ok=True)
-    tmp = Path(tempfile.mkdtemp(prefix="nde-ui-"))
+    tmp = Path(tempfile.mkdtemp(prefix="misong-ui-"))
     fake = Fake(Api(runs_dir=tmp / "runs", state_dir=tmp / "state"))
     suffix = "-dark" if ns.dark else ""
     errors: list[str] = []
@@ -403,7 +403,7 @@ def main():
         page.locator(".task[data-task]").first.click()
         page.wait_for_timeout(300)
         click("[data-reuse]", 300)
-        state = page.evaluate("window.__NDE_APP__.S.pipeline.layers")
+        state = page.evaluate("window.__MISONG_APP__.S.pipeline.layers")
         assert [x["type"] for x in state] == ["archive", "archive", "rename", "split"]
         assert state[1]["_lock"] and not state[1]["password"]
         assert state[-1]["size"] == "1900M"

@@ -1,6 +1,6 @@
 """魔曰 (Abracadabra) wrapper: drives the vendored V3.0.11 build via node.
 
-Requires only `node` on PATH; the bundled build (src/nde/vendor/abracadabra,
+Requires only `node` on PATH; the bundled build (src/misong/vendor/abracadabra,
 GPL-3.0) has no npm dependencies. Modes:
   wenyan — 文言文模式（推荐，AES 密钥即"魔咒"）
   old    — 传统魔曰（映射表+密钥）

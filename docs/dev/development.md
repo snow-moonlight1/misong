@@ -11,19 +11,29 @@ python -m venv .venv
 
 - 测试只使用假驱动和本地模拟页面，不访问真实网盘。
 - 默认只收集 `tests/`，不会把 `runs/` 中安装复核用的克隆副本当成另一套测试收集。
-- Node.js 18+ 在 PATH 上时运行魔曰与哈基米互通测试；ffmpeg 在 PATH 上（或 `NDE_FFMPEG` 指向 ffmpeg.exe）
+- Node.js 18+ 在 PATH 上时运行魔曰与哈基米互通测试；ffmpeg 在 PATH 上（或 `MISONG_FFMPEG` 指向 ffmpeg.exe）
   时运行门面视频播放校验；未安装 Playwright 时浏览器驱动测试跳过。
 - 界面自查：`.venv\Scripts\python scripts\ui_preview.py [--dark]` 用模拟数据在无头 Edge 中截取各页面到 `tmp/ui`。
 - 大文件离线验证：`scripts/verify_large_cover.py --work <目录> --video <mp4> --ffmpeg <ffmpeg.exe> [--winrar <WinRAR.exe>]`，
   会生成 >4GB 样本并保留现场，不自动清理。
-- `nde.py gui --debug`（或 `NDE_DEBUG=1`）打开 WebView 开发者工具。
+- `misong.py gui --debug`（或 `MISONG_DEBUG=1`）打开 WebView 开发者工具。
+
+## 更名兼容
+
+- 发行包、Python 包和 CLI 均为 `misong`；旧版 `nde` 清单名称集中定义在 `misong.metadata`，
+  按新名优先、旧名回退读取，v1/v2 内容格式不变；新文件只写新名。
+- 任务元数据同时读取 `misong-task.json` 和旧版 `nde-task.json`，更新时保留已有字段并写新名。
+  旧任务的远端目录、检查点和文件指纹沿用原记录，不因更名重新上传。
+- 源码运行的仓库根推算深度不变，继续使用 `rpa/state/`、`ui-settings.json`、`ui-templates.json`。
+  包改名不搬迁浏览器档案或认证数据；数据目录可配置及安装后的迁移仍按 0.2 前置工作实施。
+- `MISONG_DEBUG`、测试用 `MISONG_FFMPEG` 优先，仍兼容旧 `NDE_DEBUG`、`NDE_FFMPEG`。
 
 ## 目录结构
 
 ```
-nde.py                入口（等同安装后的 nde 命令）
+misong.py                入口（等同安装后的 misong 命令）
 start-gui.cmd         Windows 双击启动桌面应用
-src/nde/
+src/misong/
   cli.py              命令行
   formats.py pack.py layers.py split.py merge.py mp4.py preflight.py
                       层格式、打包/还原、分卷、门面视频、空间与耗时预检
@@ -52,7 +62,7 @@ docs/                 用户文档；docs/dev/ 为开发与调研资料
 ## 打包层模型
 
 - `layers.py` 定义四类层：archive（压缩/加密）、cover（门面视频）、split（分卷）、rename（改后缀），按内到外执行。
-  `.nde.json` v2 记录完整层序（外到内存储），v1 清单、旧模板和旧任务设置自动兼容。
+  `.misong.json` v2 记录完整层序（外到内存储），v1 清单、旧模板和旧任务设置自动兼容。
 - 压缩层支持 7z/ZIP 密码，有密码的 7z 自动加密文件名；后续 7z/ZIP 层默认仅存储，避免重复压缩。
   raw 格式（lz4 等）遇到目录时自动垫一层 tar。
 - cover、split、rename 只接受单文件；split 后要继续叠层须先 archive 把全部卷归档。
@@ -60,7 +70,7 @@ docs/                 用户文档；docs/dev/ 为开发与调研资料
 - 门面视频把归档嵌入 `ftyp` 之后的 `free` box，自动修正媒体偏移；超过 4GB 时 stco 提升为 co64，
   ZIP 按 ZIP64 修正偏移，并在尾部 free box 补中央目录与 EOCD。仅支持非碎片化 MP4；旧 `merge` 命令保留尾部拼接。
 - 分卷命名 `名字.001/.002`，不超过阈值则保持单文件；数字默认 MB，显式 `B` 按字节；`join` 兼容旧 `.partNNN`。
-- 只上传最终层文件/分卷；`.nde.json`、`.ndesplit.json`、`RESTORE.txt` 只留本地，可选 `.sha256` 默认关闭。
+- 只上传最终层文件/分卷；`.misong.json`、`.misongsplit.json`、`RESTORE.txt` 只留本地，可选 `.sha256` 默认关闭。
 - 每次开始前预检中间空间、总读写量和耗时（按 150MB/s 粗估）；每层完成即清理上层临时文件，
   峰值约 2–3 份资源；目标盘不足时换最大可用本地盘，都不足则阻止。
 - 7-Zip 定位顺序：内置 `7za.exe`（也识别 7z.exe + 7z.dll 布局）→ 已安装的 7-Zip → py7zr / pyzipper 回退。
@@ -68,14 +78,14 @@ docs/                 用户文档；docs/dev/ 为开发与调研资料
 
 ## 网盘驱动约定
 
-实现在 `src/nde/rpa/`，发布编排在 `src/nde/publish.py`，现场机制与选择器依据见[RPA 现场机制](rpa-research.md)。
+实现在 `src/misong/rpa/`，发布编排在 `src/misong/publish.py`，现场机制与选择器依据见[RPA 现场机制](rpa-research.md)。
 
 - 只走网站正常的上传、分享交互；不实现私有对象存储签名、验证码破解或账号前置绕过。
 - 每个任务建独立目录，只分享该目录；精确匹配文件列表中的文件行，传输队列里的同名文字不算成功。
   不得把首卷成功或单纯登录视为整批上传分享成功。
 - 多本体盘顺序上传、复用同一份产物；本体完成后才填写 guide 并上传第一跳。
 - `PublishOptions.task_name/folder_name` 和 `prepare_upload` 的同名参数供 CLI / 桌面端共用；
-  名称先校验再创建本地任务。标题写 `nde-task.json`，远端目录写各 stage 的 `folder`。
+  名称先校验再创建本地任务。标题写 `misong-task.json`，远端目录写各 stage 的 `folder`。
   自定义目录带 `custom_folder`；驱动拒绝已有同名目录，确认新建后立即回调写 `folder_created` 检查点，
   续跑才可重新进入。若进程在新建与检查点之间终止，保守停止，人工核对后另建新任务；不自动认领目录。
   中转第一跳加 `-hop`；换链失效重建时仍分配独立随机目录，不复用旧指引目录。

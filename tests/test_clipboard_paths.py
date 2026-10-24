@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from nde.desktop.api import Api
+from misong.desktop.api import Api
 
 
 def test_clipboard_paths_quotes_multiple_dedup_and_upload_expansion(tmp_path):
@@ -40,25 +40,25 @@ def test_clipboard_paths_quotes_multiple_dedup_and_upload_expansion(tmp_path):
         page.wait_for_selector('.page.active [data-act="paste-paths"]')
         clipboard['text'] = f'"{a}"\r\n"{b}"\r\n{a}\r\n'
         page.locator('.page.active [data-act="paste-paths"]').click()
-        page.wait_for_function('window.__NDE_APP__.S.pipeline.inputs.length===2')
-        assert page.evaluate('window.__NDE_APP__.S.pipeline.inputs.map(f=>f.path)') == [str(a), str(b)]
+        page.wait_for_function('window.__MISONG_APP__.S.pipeline.inputs.length===2')
+        assert page.evaluate('window.__MISONG_APP__.S.pipeline.inputs.map(f=>f.path)') == [str(a), str(b)]
         page.get_by_role('button', name='上传分享', exact=True).click()
         clipboard['text'] = str(folder)
         page.locator('.page.active [data-act="paste-paths"]').click()
-        page.wait_for_function('window.__NDE_APP__.S.upload.files.length===1')
-        assert page.evaluate('window.__NDE_APP__.S.upload.files[0].path') == str(a)
+        page.wait_for_function('window.__MISONG_APP__.S.upload.files.length===1')
+        assert page.evaluate('window.__MISONG_APP__.S.upload.files[0].path') == str(a)
         clipboard['text'] = ''
         page.locator('.page.active [data-act="paste-paths"]').click()
         page.get_by_text('剪贴板里没有路径，请先复制文件的完整路径', exact=True).wait_for()
         clipboard['denied'] = True
         page.locator('.page.active [data-act="paste-paths"]').click()
         page.get_by_text('无法读取剪贴板，请使用选择文件或拖放', exact=True).wait_for()
-        assert page.evaluate('window.__NDE_APP__.S.upload.files.length') == 1
+        assert page.evaluate('window.__MISONG_APP__.S.upload.files.length') == 1
         browser.close()
 
 
 def test_clipboard_bridge_parses_paths_and_redacts_read_errors(tmp_path, monkeypatch):
-    import nde.desktop.api as bridge
+    import misong.desktop.api as bridge
     api = Api(tmp_path / 'runs', tmp_path / 'state')
     monkeypatch.setattr(bridge, '_clipboard_text', lambda: '\r\n"C:\\test 空格\\a.bin"\r\nD:\\other.bin\n')
     assert api.clipboard_paths() == {'ok': True, 'data': [r'C:\test 空格\a.bin', r'D:\other.bin']}

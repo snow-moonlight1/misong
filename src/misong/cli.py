@@ -1,8 +1,8 @@
-"""nde — netdisk-encrypt command line.
+"""misong — Misong command line.
 
 Commands:
   nest     one-shot nested encrypted packaging (multi-layer, uncommon formats)
-  unest    reverse a nest artifact using its .nde.json manifest
+  unest    reverse a nest artifact using its .misong.json manifest
   split    one-shot volume split (byte parts + sha256 sidecar)
   join     verify & reassemble split parts
   merge    copy /b style concat (zip offsets auto-fixed when possible)
@@ -78,12 +78,12 @@ def cmd_nest(a: argparse.Namespace) -> int:
     manifest = pack.pack(inputs, layers, out, keep_layers=a.keep_layers)
     out = out.with_name(manifest["artifact"])
     print("[ok] 产物: " + ", ".join(r["name"] for r in manifest["artifacts"]))
-    print(f"[ok] 清单: {out}.nde.json")
+    print(f"[ok] 清单: {out}.misong.json")
     for rec in manifest["layers"]:
         tag = "密码" + ("+头加密" if rec["header_enc"] else "") if rec["password"] else "无密码"
         print(f"     外层->内层: {rec.get('format', rec.get('type', 'archive')):<8} {tag:<10} {rec['size']:,}B")
     if a.disguise:
-        print(f"[提示] 伪装后缀 {out.suffix}：接收方需改回真实格式或用 nde unwrap/unest")
+        print(f"[提示] 伪装后缀 {out.suffix}：接收方需改回真实格式或用 misong unwrap/unest")
     return 0
 
 
@@ -209,7 +209,7 @@ def cmd_relay(a: argparse.Namespace) -> int:
             f"2. 本体链接：{a.body_link or '<待RPA填入>'}\n"
             f"3. 提取码/访问码：<待RPA填入>\n"
             f"4. 解压密码看视频第 {a.pwd_hint_at or '?'} 秒 / 帖子末尾暗号。\n"
-            f"5. 若提示分卷缺失，把所有分卷放同一文件夹后运行: nde join 第一卷\n"
+            f"5. 若提示分卷缺失，把所有分卷放同一文件夹后运行: misong join 第一卷\n"
         )
         (out_dir / "guide.txt").write_text(guide, encoding="utf-8")
         print(f"[ok] 简易版说明: {out_dir}/guide.txt")
@@ -310,7 +310,7 @@ def cmd_share_import(a):
     from .publish import import_share
     text = Path(a.file).read_text(encoding="utf-8") if a.file else a.text
     import_share(Path(a.plan), a.stage, text or "")
-    print("已回填；运行 nde publish --plan 任务文件 继续")
+    print("已回填；运行 misong publish --plan 任务文件 继续")
     return 0
 
 
@@ -321,9 +321,9 @@ def cmd_gui(a):
 
 def build_parser() -> argparse.ArgumentParser:
     from . import __version__
-    p = argparse.ArgumentParser(prog="nde", description=__doc__,
+    p = argparse.ArgumentParser(prog="misong", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--version", action="version", version=f"nde {__version__}")
+    p.add_argument("--version", action="version", version=f"misong {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     n = sub.add_parser("nest", help="一键多层嵌套加密打包")
@@ -343,7 +343,7 @@ def build_parser() -> argparse.ArgumentParser:
     u.add_argument("artifact")
     u.add_argument("-P", "--password", default="", help="外层->内层顺序的密码链")
     u.add_argument("-o", "--out", required=True)
-    u.add_argument("--manifest", help="手动指定 .nde.json（默认找同名 sidecar）")
+    u.add_argument("--manifest", help="手动指定 .misong.json（默认找同名 sidecar）")
     u.set_defaults(fn=cmd_unest)
 
     s = sub.add_parser("split", help="一键分卷")

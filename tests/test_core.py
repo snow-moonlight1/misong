@@ -1,4 +1,4 @@
-"""End-to-end verification for netdisk-encrypt toolbox.
+"""End-to-end verification for Misong toolbox.
 
 Run: .venv/Scripts/python -m pytest tests -v
 Heavy JS interop tests are skipped automatically when node/deps missing.
@@ -17,8 +17,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from nde import formats, merge, pack, split as splitmod  # noqa: E402
-from nde.encoders import beast, hajimi, mojibake, plain  # noqa: E402
+from misong import formats, merge, pack, split as splitmod  # noqa: E402
+from misong.encoders import beast, hajimi, mojibake, plain  # noqa: E402
 
 # ---------------------------------------------------------------- fixtures
 
@@ -48,7 +48,7 @@ def small_mp4(tmp_path):
 
 def cli(*args, expect_ok=True):
     r = subprocess.run(
-        [sys.executable, str(ROOT / "nde.py"), *map(str, args)],
+        [sys.executable, str(ROOT / "misong.py"), *map(str, args)],
         capture_output=True, cwd=str(ROOT))
     if expect_ok and r.returncode != 0:
         raise AssertionError(f"CLI failed: {r.stderr.decode('utf-8', 'replace')}")
@@ -170,7 +170,7 @@ def test_nest_two_layers(sample_dir, tmp_path):
               pack.LayerSpec("7z", password="outerPW", header_enc=True)]
     mf = pack.pack([sample_dir], layers, out)
     assert out.exists() and out.stat().st_size > 0
-    side = json.loads((out.parent / (out.name + ".nde.json")).read_text(encoding="utf-8"))
+    side = json.loads((out.parent / (out.name + ".misong.json")).read_text(encoding="utf-8"))
     assert [l["format"] for l in side["layers"]] == ["7z", "zip"]  # outer first
     res = pack.unest(out, tmp_path / "back", ["outerPW", "innerPW"])
     assert res[0].name == "my_resource"
@@ -183,7 +183,7 @@ def test_nest_raw_uncommon_formats(sample_dir, tmp_path):
     layers = [pack.LayerSpec("lz4"), pack.LayerSpec("7z", password="pw1")]
     out = tmp_path / "video.lz4"
     pack.pack([src], layers, out, )
-    mf = json.loads((out.parent / (out.name + ".nde.json")).read_text(encoding="utf-8"))
+    mf = json.loads((out.parent / (out.name + ".misong.json")).read_text(encoding="utf-8"))
     res = pack.unest(out, tmp_path / "b2", ["pw1", None])
     assert res[0].read_text(encoding="utf-8") == src.read_text(encoding="utf-8")
     # sniff must NOT claim lz4 (it is really 7z) — that's the point of disguise
@@ -353,7 +353,7 @@ def test_cli_prepares_baidu_365_day_share(tmp_path):
 @pytest.mark.parametrize("damage", ["none", "corrupt", "missing", "swapped"])
 def test_recipient_join_with_public_checksums(tmp_path, damage):
     """Recipients receive the published .sha256, not the private JSON sidecar."""
-    from nde.workflows import write_checksums
+    from misong.workflows import write_checksums
     src = tmp_path / "中文 空格.bin"
     src.write_bytes(__import__('os').urandom(300))
     volumes = tmp_path / "download"

@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from nde.rpa.drivers import BrowserDiskDriver, DriverBlocked, FeimaoDriver
-from nde.sharing import ShareInfo, parse_share
+from misong.rpa.drivers import BrowserDiskDriver, DriverBlocked, FeimaoDriver
+from misong.sharing import ShareInfo, parse_share
 
 
 @pytest.mark.parametrize("url", ["https://cm1.hk/s/abc123", "https://cm2.hk/s/abc123", "https://cm1.hk/f/folder123"])
@@ -18,8 +18,8 @@ def test_upload_targets_preserve_each_filename(monkeypatch):
     async def upload(self, page, files, folder):
         return [folder]
     monkeypatch.setattr(BrowserDiskDriver, "upload", upload)
-    result = asyncio.run(FeimaoDriver().upload(None, [Path("guide.txt"), Path("guide.7z")], "nde-job"))
-    assert result == ["nde-job/guide.txt", "nde-job/guide.7z"]
+    result = asyncio.run(FeimaoDriver().upload(None, [Path("guide.txt"), Path("guide.7z")], "misong-job"))
+    assert result == ["misong-job/guide.txt", "misong-job/guide.7z"]
 
 
 def share_fixture(monkeypatch):
@@ -59,7 +59,7 @@ def share_fixture(monkeypatch):
 
 def test_single_hop_returns_file_link_not_empty_folder(monkeypatch):
     driver, page, events = share_fixture(monkeypatch)
-    info = asyncio.run(driver.share(page, ["nde-job/guide.txt"]))
+    info = asyncio.run(driver.share(page, ["misong-job/guide.txt"]))
     assert info.url == "https://cm1.hk/s/guide.txt"
     assert ("publish-file", "guide.txt") in events
     assert not any(event[0] == "publish-folder" for event in events)
@@ -67,13 +67,13 @@ def test_single_hop_returns_file_link_not_empty_folder(monkeypatch):
 
 def test_publish_files_before_sharing_multi_file_folder(monkeypatch):
     driver, page, events = share_fixture(monkeypatch)
-    info = asyncio.run(driver.share(page, ["nde-job/part001", "nde-job/part002"]))
+    info = asyncio.run(driver.share(page, ["misong-job/part001", "misong-job/part002"]))
     assert info.url == "https://cm1.hk/f/collection"
-    assert events.index(("publish-file", "part001")) < events.index(("publish-folder", "nde-job"))
-    assert events.index(("publish-file", "part002")) < events.index(("publish-folder", "nde-job"))
+    assert events.index(("publish-file", "part001")) < events.index(("publish-folder", "misong-job"))
+    assert events.index(("publish-file", "part002")) < events.index(("publish-folder", "misong-job"))
 
 
-@pytest.mark.parametrize("targets", [[], ["nde-job"], ["nde-one/a", "nde-two/b"]])
+@pytest.mark.parametrize("targets", [[], ["misong-job"], ["misong-one/a", "misong-two/b"]])
 def test_rejects_ambiguous_file_targets(monkeypatch, targets):
     driver, page, events = share_fixture(monkeypatch)
     with pytest.raises(DriverBlocked, match="明确文件目标"):
@@ -85,7 +85,7 @@ def test_covered_refresh_does_not_abort_upload(tmp_path):
     from playwright.async_api import async_playwright
 
     source = tmp_path / "part001.bin"
-    source.write_bytes(b"nde-ft")
+    source.write_bytes(b"misong-ft")
 
     async def scenario():
         async with async_playwright() as pw:
@@ -110,10 +110,10 @@ def test_covered_refresh_does_not_abort_upload(tmp_path):
             async def open_folder(page, folder):
                 driver.folder = folder
             driver._open_folder = open_folder
-            result = await driver.upload(page, [source], "nde-ft-folder")
+            result = await driver.upload(page, [source], "misong-ft-folder")
             await browser.close()
             return result, notes
 
     result, notes = asyncio.run(scenario())
-    assert result == ["nde-ft-folder/part001.bin"]
+    assert result == ["misong-ft-folder/part001.bin"]
     assert any("传输面板" in note for note in notes)

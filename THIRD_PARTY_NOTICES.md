@@ -1,15 +1,15 @@
 # Third-Party Notices / 第三方组件声明
 
-netdiskencrypt (nde) as a whole is licensed under **GPL-3.0-or-later** (see `LICENSE`).
+Misong (密送) as a whole is licensed under **GPL-3.0-or-later** (see `LICENSE`).
 The components below are redistributed in this repository or package and keep their own licenses.
 本项目整体以 GPL-3.0-or-later 发布；以下组件随仓库或安装包分发，各自保留原许可证。
 
 ## 1. Abracadabra 魔曰 V3.0.11
 
-- File: `src/nde/vendor/abracadabra/abracadabra-cn.mjs` — `dist/abracadabra-cn.js` from the npm package
+- File: `src/misong/vendor/abracadabra/abracadabra-cn.mjs` — `dist/abracadabra-cn.js` from the npm package
   `abracadabra-cn@3.0.11`, content unmodified (renamed to `.mjs` only).
   SHA-256 `bf472ed92dd7cb16977241a06dd5fc0ddc1875e684706f3453d34b8e636a01f0`.
-- Author: SheepChef. License: **GPL-3.0** (full text: `src/nde/vendor/abracadabra/LICENSE`).
+- Author: SheepChef. License: **GPL-3.0** (full text: `src/misong/vendor/abracadabra/LICENSE`).
 - Corresponding source: <https://github.com/SheepChef/Abracadabra/tree/V3.0.11>
 - Note: upstream switched to the AIPL license from V3.1.0. No AIPL-licensed code is used or distributed here.
 - The bundle contains the following libraries (licenses unchanged):
@@ -21,15 +21,15 @@ The components below are redistributed in this repository or package and keep th
 
 ## 2. 7-Zip 26.04 Extra — `7za.exe`
 
-- Files: `src/nde/vendor/7zip/7za.exe`, `License.txt`, `README.txt`. Official binary, unmodified.
+- Files: `src/misong/vendor/7zip/7za.exe`, `License.txt`, `README.txt`. Official binary, unmodified.
 - Copyright (C) Igor Pavlov. License: GNU LGPL-2.1-or-later, with some parts under BSD-3-Clause
-  (see `src/nde/vendor/7zip/License.txt`).
+  (see `src/misong/vendor/7zip/License.txt`).
 - Source code: <https://www.7-zip.org/> (download page provides the matching source package).
-- nde runs 7za as a separate process; it is not linked or modified.
+- misong runs 7za as a separate process; it is not linked or modified.
 
 ## 3. hachimi-wonameruto-translator 哈基米语翻译器
 
-- `src/nde/encoders/hajimi.py` is a Python translation of its TypeScript implementation;
+- `src/misong/encoders/hajimi.py` is a Python translation of its TypeScript implementation;
   `tests/harness/ref-bundle.mjs` is a build of its `src/lib/hachimiTranslator.ts` (tests only).
 - Upstream: <https://github.com/Starpuccino/hachimi-wonameruto-translator>
 - License: MIT, Copyright (c) 2025 Starpuccino (full text below).
@@ -41,7 +41,7 @@ The components below are redistributed in this repository or package and keep th
 
 ## 5. Beast / 兽音译者
 
-`src/nde/encoders/beast.py` is an independent implementation written from the published algorithm
+`src/misong/encoders/beast.py` is an independent implementation written from the published algorithm
 description and checked against public sample vectors of <https://github.com/SycAlright/beast_sdk>.
 No code or files from that repository are included.
 
@@ -60,7 +60,7 @@ No code or files from that repository are included.
 
 ## 7. Trademarks / 商标
 
-The netdisk icons in `src/nde/desktop/web/disks/` and the service names (Quark, Feimao, Baidu Netdisk, UC Drive,
+The netdisk icons in `src/misong/desktop/web/disks/` and the service names (Quark, Feimao, Baidu Netdisk, UC Drive,
 Xunlei/Thunder, 123pan) belong to their respective owners and are used only to identify those services in the UI.
 This project is not affiliated with or endorsed by any of them.
 

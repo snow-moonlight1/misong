@@ -4,20 +4,20 @@
 
 ## 1. 解开文案，得到分享链接
 
-**使用 nde（推荐）**：桌面应用“链接加密/解密”页粘贴文案即可；或命令行：
+**使用 misong（推荐）**：桌面应用“链接加密/解密”页粘贴文案即可；或命令行：
 
 ```powershell
-nde code decode -S beast -T "文案"
-nde code decode -S mojibake --key 密钥 -T "文案"   # 未告知密钥时用默认 ABRACADABRA
-nde code decode -S hajimi -F cipher.txt
+misong code decode -S beast -T "文案"
+misong code decode -S mojibake --key 密钥 -T "文案"   # 未告知密钥时用默认 ABRACADABRA
+misong code decode -S hajimi -F cipher.txt
 ```
 
-（未安装为命令时，用仓库内的 `.venv\Scripts\python nde.py` 代替 `nde`。）
+（未安装为命令时，用仓库内的 `.venv\Scripts\python misong.py` 代替 `misong`。）
 
-**不使用 nde**：
+**不使用 misong**：
 
 - 魔曰：官方网页 <https://abra.halu.ca>，填入发布者告知的密钥。
-- 兽曰：兽音译者类网页通常可解；不同网站的“方言”可能互不兼容，解不开时请用 nde（会自动识别三种方言）。
+- 兽曰：兽音译者类网页通常可解；不同网站的“方言”可能互不兼容，解不开时请用 misong（会自动识别三种方言）。
 - 哈基米：哈基米语翻译器（[Starpuccino/hachimi-wonameruto-translator](https://github.com/Starpuccino/hachimi-wonameruto-translator)）。
 
 ## 2. 打开分享，下载全部文件
@@ -26,7 +26,7 @@ nde code decode -S hajimi -F cipher.txt
   里面写着本体分享链接和提取码。
 - 本体可能是单个文件，也可能是 `名字.001`、`名字.002`…… 分卷。**全部下载到同一目录，不要改名**。
 - 如有 `.sha256` 校验文件，也下载到同一目录；`join` / `unwrap` 会自动校验其中对应的全部分卷。
-  没有 `.sha256` 或本地 `.ndesplit.json` 时，合卷只能检查编号连续，无法保证内容完整或发现缺失的最后一卷；
+  没有 `.sha256` 或本地 `.misongsplit.json` 时，合卷只能检查编号连续，无法保证内容完整或发现缺失的最后一卷；
   `join` 会明确显示“未校验”，请向发布者确认卷数或索取校验文件。
 - 网页可能把下载交给客户端、要求登录/转存，或显示付费下载；以平台页面为准。
   网页不能直接保存文件时，可用已安装客户端正常下载到一个新的空目录；不要把“任务创建成功”当作已经下载完。
@@ -42,26 +42,26 @@ nde code decode -S hajimi -F cipher.txt
 |---|---|
 | 单层 7z / ZIP（含分卷） | 用 7-Zip 或 WinRAR 打开 `.001` 或该文件，输入密码 |
 | 门面视频 `.mp4` | 文件可直接播放；用 7-Zip / WinRAR 命令行（如 `7z x 文件.mp4`）可解出内含归档 |
-| 多层嵌套或含 `.lz4` / `.zst` / `.br` 等冷门格式 | 用 nde 一次剥离（见下） |
-| 只想合并分卷 | `nde join 名字.001`（会校验每卷，缺卷或损坏会提示重新下载第几卷） |
+| 多层嵌套或含 `.lz4` / `.zst` / `.br` 等冷门格式 | 用 misong 一次剥离（见下） |
+| 只想合并分卷 | `misong join 名字.001`（会校验每卷，缺卷或损坏会提示重新下载第几卷） |
 
 在新的空目录中下载完成后，可分两步核验（将下面的示例名替换为实际文件名）：
 
 ```powershell
-nde join 名字.7z.001 -o joined.7z
-nde unwrap joined.7z -o restored --chain-pwd="归档密码"
+misong join 名字.7z.001 -o joined.7z
+misong unwrap joined.7z -o restored --chain-pwd="归档密码"
 ```
 
 第一步只合并并校验分卷，不会解密。第二步的示例适用于单层 7z；多层按下文填写归档层密码链。
-没有清单时无需向发布者索取本地 `.nde.json`；下载全部分卷及公开 `.sha256` 即可按下文 `unwrap`。
+没有清单时无需向发布者索取本地 `.misong.json`；下载全部分卷及公开 `.sha256` 即可按下文 `unwrap`。
 
 
 ```powershell
 # 无清单：按文件特征逐层剥离；--chain-pwd 只按“归档层”从外到内填写密码，无密码层写 -
-nde unwrap 名字.001 -o restored --chain-pwd="外层密码,内层密码"
+misong unwrap 名字.001 -o restored --chain-pwd="外层密码,内层密码"
 
-# 有发布者的 .nde.json 清单（通常只有发布者本人有）：密码对齐所有层，非归档层写 -
-nde unest 名字.001 -o restored '-P=外层密码,-,内层密码'
+# 有发布者的 .misong.json 清单（通常只有发布者本人有）：密码对齐所有层，非归档层写 -
+misong unest 名字.001 -o restored '-P=外层密码,-,内层密码'
 ```
 
 密码链对应的层解完后，已解出的普通文件会作为原始资源保留，不再扫描其中偶然出现的归档特征。
@@ -70,8 +70,8 @@ nde unest 名字.001 -o restored '-P=外层密码,-,内层密码'
 ## 常见问题
 
 - **提示缺卷或校验失败**：重新下载提示的那一卷，确认文件名没有被浏览器改成 `名字(1).001` 之类。
-- **魔曰解不开**：先确认密钥。如果文案由新版魔曰生成且 nde 报错，请用官方网页解密。
+- **魔曰解不开**：先确认密钥。如果文案由新版魔曰生成且 misong 报错，请用官方网页解密。
 - **trunc 截断文案**：中段已丢失，不能 encode→decode 往返；解码会明确报错，请向发布者索取完整链接。
-- **兽曰解不开**：可能是方言不同，用 nde 解码（默认自动识别）。
+- **兽曰解不开**：可能是方言不同，用 misong 解码（默认自动识别）。
 - 兽曰三种方言均支持 emoji 和扩展汉字；旧版 `pojie` 编码曾丢失这类字符，已丢失的字符需由发布者重新编码。
 - **7z 打开后看不到文件名**：说明启用了文件名加密，输入密码后才会显示，属正常现象。

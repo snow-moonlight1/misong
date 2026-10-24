@@ -24,7 +24,7 @@ from .share_options import ShareOptions, EXPIRY_LABELS, ACCESS_LABELS, common_op
 class App:
     def __init__(self, root: tk.Tk):
         self.root = root
-        root.title("Netdisk Encrypt · 资源发布工作台")
+        root.title("密送（Misong）· 资源发布工作台")
         root.geometry("1180x820")
         root.minsize(1020, 740)
         self.events = queue.Queue()
@@ -66,7 +66,7 @@ class App:
         header = ttk.Frame(self.root, padding=(26, 20, 26, 12))
         header.pack(fill="x")
         ttk.Label(header, text="资源发布工作台", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(header, text="NETDISK ENCRYPT     打包  →  上传  →  分享  →  加密文案", style="Sub.TLabel").pack(anchor="w", pady=(6, 0))
+        ttk.Label(header, text="密送 Misong     打包  →  上传  →  分享  →  加密文案", style="Sub.TLabel").pack(anchor="w", pady=(6, 0))
         book = ttk.Notebook(self.root)
         book.pack(fill="both", expand=True, padx=24, pady=(0, 14))
         workspace = ttk.Frame(book, padding=16)

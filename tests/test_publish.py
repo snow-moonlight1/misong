@@ -7,11 +7,11 @@ from threading import Event
 
 import pytest
 
-from nde import pack, split
-from nde.jobs import exclusive, fingerprint
-from nde.publish import Paused, PublishOptions, import_share, prepare, publish
-from nde.sharing import ShareInfo, parse_share
-from nde.encoders import beast, hajimi, mojibake
+from misong import pack, split
+from misong.jobs import exclusive, fingerprint
+from misong.publish import Paused, PublishOptions, import_share, prepare, publish
+from misong.sharing import ShareInfo, parse_share
+from misong.encoders import beast, hajimi, mojibake
 
 
 class FakeRuntime:
@@ -97,7 +97,7 @@ def test_simple_body_before_guide_and_hop(tmp_path):
 
 
 def test_multi_disk_copy_contains_all_links_and_resumes_without_upload(tmp_path):
-    from nde.share_options import ShareOptions
+    from misong.share_options import ShareOptions
     path = make_job(tmp_path, body_disks=("uc", "xunlei"), share_options=ShareOptions("7", "code"))
     rt = FakeRuntime()
     result = run(path, rt)
@@ -125,7 +125,7 @@ def test_replacing_any_body_link_invalidates_multi_disk_guide(tmp_path):
 
 
 def test_unsupported_policy_rejected_before_pack(tmp_path):
-    from nde.share_options import ShareOptions
+    from misong.share_options import ShareOptions
     with pytest.raises(ValueError, match="不支持"):
         make_job(tmp_path, body_disks=("uc", "xunlei"), share_options=ShareOptions("60", "none"))
     assert not (tmp_path / "output").exists()
@@ -165,27 +165,27 @@ def test_completed_job_never_opens_disk_again(tmp_path):
 
 
 def test_custom_names_survive_resume_without_reclaiming_folder(tmp_path):
-    from nde import workflows
-    path = make_job(tmp_path, task_name="  第一期 🐈  ", folder_name="nde-自定义目录", body_disks=("quark", "uc"))
+    from misong import workflows
+    path = make_job(tmp_path, task_name="  第一期 🐈  ", folder_name="misong-自定义目录", body_disks=("quark", "uc"))
     assert workflows.read_meta(path.parent)["title"] == "第一期 🐈"
-    assert all(s["folder"] == "nde-自定义目录" for s in load(path)["stages"])
+    assert all(s["folder"] == "misong-自定义目录" for s in load(path)["stages"])
     with pytest.raises(RuntimeError):
         run(path, FakeRuntime(fail_upload=2))
     assert load(path)["stages"][0]["folder_created"]
     resumed = FakeRuntime()
     run(path, resumed)
-    assert ("new-folder", "quark", "nde-自定义目录") not in resumed.events
-    assert ("new-folder", "uc", "nde-自定义目录") in resumed.events
+    assert ("new-folder", "quark", "misong-自定义目录") not in resumed.events
+    assert ("new-folder", "uc", "misong-自定义目录") in resumed.events
 
 
 def test_custom_relay_names_keep_body_and_hop_separate(tmp_path):
-    path = make_job(tmp_path, "simple", folder_name="nde-本体", hop_disk="quark")
+    path = make_job(tmp_path, "simple", folder_name="misong-本体", hop_disk="quark")
     stages = load(path)["stages"]
-    assert [s["folder"] for s in stages] == ["nde-本体-hop", "nde-本体"]
+    assert [s["folder"] for s in stages] == ["misong-本体-hop", "misong-本体"]
     run(path, FakeRuntime())
     import_share(path, "body", "https://pan.quark.cn/s/replacement")
     hop = load(path)["stages"][0]
-    assert hop["folder"] != "nde-本体-hop"
+    assert hop["folder"] != "misong-本体-hop"
     assert not hop.get("custom_folder") and not hop.get("folder_created")
 
 
@@ -200,24 +200,24 @@ def test_invalid_custom_folder_rejected_before_output(tmp_path, folder):
 
 
 def test_cli_names_and_resume_override_rejected(tmp_path):
-    from nde.cli import main
-    from nde import workflows
+    from misong.cli import main
+    from misong import workflows
     src = tmp_path / "源.txt"
     src.write_text("test", encoding="utf-8")
     out = tmp_path / "named"
     assert main(["publish", str(src), "-o", str(out), "--prepare", "-L", "zip", "--schemes", "beast",
-                 "--task-name", "我的任务", "--folder-name", "nde-指定目录"]) == 0
+                 "--task-name", "我的任务", "--folder-name", "misong-指定目录"]) == 0
     path = out / "relay-plan.json"
     assert workflows.read_meta(out)["title"] == "我的任务"
-    assert load(path)["stages"][0]["folder"] == "nde-指定目录"
+    assert load(path)["stages"][0]["folder"] == "misong-指定目录"
     assert main(["publish", "--plan", str(path), "--folder-name", "other", "--prepare"]) != 0
 
 
 def test_blank_names_preserve_default_folders_and_title(tmp_path):
-    from nde import workflows
+    from misong import workflows
     path = make_job(tmp_path, task_name="   ", folder_name="   ")
     plan = load(path)
-    assert plan["stages"][0]["folder"] == f"nde-{plan['id']}-body-quark"
+    assert plan["stages"][0]["folder"] == f"misong-{plan['id']}-body-quark"
     assert not plan["stages"][0].get("custom_folder")
     assert workflows.read_meta(path.parent)["title"] == "input"
 
@@ -299,7 +299,7 @@ def test_reject_bad_or_ambiguous_share(text):
 
 
 def test_cli_prepare_and_import_share(tmp_path):
-    from nde.cli import main
+    from misong.cli import main
     src = tmp_path / "src.txt"
     src.write_text("test")
     out = tmp_path / "job"
@@ -331,7 +331,7 @@ def test_replacing_body_link_rebuilds_downstream_guide(tmp_path):
 
 
 def test_copy_failure_reuses_shares_on_retry(tmp_path, monkeypatch):
-    import nde.publish as module
+    import misong.publish as module
     path = make_job(tmp_path)
     original = module.write_copy
     def fail(*args, **kwargs):
@@ -348,8 +348,8 @@ def test_copy_failure_reuses_shares_on_retry(tmp_path, monkeypatch):
 
 def test_three_copy_versions_roundtrip():
     import shutil
-    from nde.encoders.mojibake import BRIDGE
-    from nde.sharing import encode_copy
+    from misong.encoders.mojibake import BRIDGE
+    from misong.sharing import encode_copy
     if not shutil.which("node") or not BRIDGE.exists():
         pytest.skip("Node vendored bridge unavailable")
     text = ShareInfo("quark", "https://pan.quark.cn/s/fixture", "a123", "永久有效").text()

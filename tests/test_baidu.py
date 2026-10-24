@@ -5,8 +5,8 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from nde.rpa.drivers import REGISTRY, DriverBlocked
-from nde.share_options import ShareOptions, common_options
+from misong.rpa.drivers import REGISTRY, DriverBlocked
+from misong.share_options import ShareOptions, common_options
 
 URL = "https://pan.baidu.com/disk/main#/index?category=all"
 
@@ -182,11 +182,11 @@ def test_baidu_upload_share_resume_and_login_marker(tmp_path):
             await page.reload()
             await page.locator(".nd-user-info").wait_for(state="visible")
 
-            targets = await driver.upload(page, files, "nde-test")
-            assert targets == ["nde-test"]
+            targets = await driver.upload(page, files, "misong-test")
+            assert targets == ["misong-test"]
             assert await driver.rows(page, files[0].name).count() == 1
             assert await driver.rows(page, files[1].name).count() == 1
-            await driver.upload(page, files, "nde-test")  # Same session must not reupload.
+            await driver.upload(page, files, "misong-test")  # Same session must not reupload.
             assert fake.uploads == len(files)
 
             driver.configure_share(ShareOptions("7", "code"))
@@ -199,7 +199,7 @@ def test_baidu_upload_share_resume_and_login_marker(tmp_path):
             assert fake.last_share["expiredType"] == "7"
 
             resumed = REGISTRY["baidu"](timeout=4, login_timeout=2, notify=lambda _: None)
-            await resumed.upload(page, files, "nde-test")  # Fresh driver reuses listed sizes.
+            await resumed.upload(page, files, "misong-test")  # Fresh driver reuses listed sizes.
             assert fake.uploads == len(files)
             await browser.close()
 
@@ -214,7 +214,7 @@ def test_baidu_rejects_size_mismatch_in_task_folder(tmp_path):
 
     async def scenario():
         fake = FakeBaidu()
-        fake.folders["nde-test"] = {files[0].name: files[0].stat().st_size + 1}
+        fake.folders["misong-test"] = {files[0].name: files[0].stat().st_size + 1}
         async with async_playwright() as pw:
             browser = await pw.chromium.launch(headless=True)
             page = await browser.new_page()
@@ -222,7 +222,7 @@ def test_baidu_rejects_size_mismatch_in_task_folder(tmp_path):
             await page.goto(URL)
             driver = REGISTRY["baidu"](timeout=4, login_timeout=2, notify=lambda _: None)
             with pytest.raises(DriverBlocked, match="大小不符"):
-                await driver.upload(page, files, "nde-test")
+                await driver.upload(page, files, "misong-test")
             assert fake.uploads == 0
             await browser.close()
 
@@ -243,7 +243,7 @@ def test_baidu_missing_code_and_option_mismatch_are_blocked(tmp_path):
             await page.route("**/*", fake.route)
             await page.goto(URL)
             driver = REGISTRY["baidu"](timeout=3, login_timeout=2, notify=lambda _: None)
-            targets = await driver.upload(page, files, "nde-test")
+            targets = await driver.upload(page, files, "misong-test")
             driver.configure_share(ShareOptions("7", "code"))
             fake.code = ""
             with pytest.raises(DriverBlocked, match="提取码"):
@@ -258,7 +258,7 @@ def test_baidu_missing_code_and_option_mismatch_are_blocked(tmp_path):
 
 
 def test_baidu_capabilities_and_gui_choices(tmp_path):
-    from nde.desktop.api import Api
+    from misong.desktop.api import Api
     expiry, access = common_options(["baidu"])
     assert expiry == ["default", "1", "7", "30", "365", "forever"]
     assert access == ["default", "code"]

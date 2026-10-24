@@ -16,7 +16,7 @@
 - **自解压 EXE**：同样不被在线解压，但很多盘限制上传 exe（我们未实现，
   当前可选择7z头加密和字节分卷，但两者不等于自解压EXE）。
 - 嵌套顺序常见为：`原始 -> tar/lz4(冷门层) -> zip(密码) -> 7z(密码+头加密)`。
-  ✅ `nde nest MyRes -L lz4,zip,7z '-P=-,pw1,pw2'`
+  ✅ `misong nest MyRes -L lz4,zip,7z '-P=-,pw1,pw2'`
 
 ### 2. 冷门格式层（lz4 等）
 冷门压缩层和后缀伪装是不同步骤：真实lz4/zstd数据必须按其格式解压，改名不会转换格式，
@@ -27,15 +27,15 @@ lz4等压缩算法本身也不提供密码加密。支持的格式家族有lz4�
 
 ### 3. 一键分卷
 - 7z/RAR 原生分卷（`.001/.part1.rar`）——接收方需全齐。
-- ✅ 我们的字节分卷 `.partNNN` + sha256 清单：任何格式产物都能切，`nde join`
+- ✅ 我们的字节分卷 `.partNNN` + sha256 清单：任何格式产物都能切，`misong join`
   自动验卷（缺卷/坏卷直接报"请重新下载第 N 卷"，解决社区高频痛点）。
-- `nde split`默认4000M，`nde publish`默认1900M；均为分卷配置，不代表已确认的账号单文件上限。
+- `misong split`默认4000M，`misong publish`默认1900M；均为分卷配置，不代表已确认的账号单文件上限。
 
 ### 4. 格式合并 / 后缀互换（"视频里藏包"）
 调研确认社区实际有三种形态，本项目三种全覆盖：
 - **A. copy /b 纯拼接**（图种同款原理：文件头识别机制）：`视频+压缩包` 拼成
   一个文件，播放器从头读、压缩软件扫尾找 EOCD。改后缀即可解。
-  ✅ `nde merge a.mp4 b.zip -o cover.mp4 --raw`
+  ✅ `misong merge a.mp4 b.zip -o cover.mp4 --raw`
 - **B. 拼接+zip 偏移修正**（我们额外做的正确性升级）：把 zip 的所有绝对偏移
   +len(前段)，产物是 **标准合法 zip（SFX 同款布局）**，实测连严格的 Python
   zipfile 都能直接打开；A 形态则依赖 WinRAR 式宽容扫描。
@@ -43,16 +43,16 @@ lz4等压缩算法本身也不提供密码加密。支持的格式家族有lz4�
 - **C. 纯改后缀伪装**：7z/zip 本体改名叫 `.mp4/.png/.lz4`。播放器读 0 偏移
   失败，归档工具从尾部 EOCD 入手。资源站"mp4 改 zip 用 WinRAR 解压"、
   隐写者工具（MKV 需 WinRAR 修复、7z 用 `#` 号模式、`7z x -t# file -i!*.zip`）
-  全属这一类。✅ `nde nest --disguise .mp4`，还原用 `nde unwrap/unest`
+  全属这一类。✅ `misong nest --disguise .mp4`，还原用 `misong unwrap/unest`
 - 注意：视频需 `-movflags +faststart`（moov 在头部）才经得起尾部追加，
   demo 实测合并体 ffprobe 正常解析。
 
 ### 5. 网盘中转（两段式导流）
 - **简易版**：第一跳（飞猫盘等）只放 guide.txt → txt 内是第二跳链接+提取码，
-  密码则藏在视频/帖子里。✅ `nde relay --form simple` 生成 guide.txt 模板+
-  relay-plan.json（旧版静态占位模板）。自动回填、上传和文案使用`nde publish --form simple`。
+  密码则藏在视频/帖子里。✅ `misong relay --form simple` 生成 guide.txt 模板+
+  relay-plan.json（旧版静态占位模板）。自动回填、上传和文案使用`misong publish --form simple`。
 - **复杂版**：第一跳直接放**带密码压缩包**，包内才是 guide.txt，再导流第二跳
-  下载本体。✅ `nde relay --form complex`；配合 nest 产物即开即用。
+  下载本体。✅ `misong relay --form complex`；配合 nest 产物即开即用。
 - 文件层与链接层解耦；换本体链接时，发布编排会重建指引及第一跳，然后重出文案。
 
 ## 二、链接/文本层套路（本项目实现 4 族 + 备忘若干）
@@ -68,9 +68,9 @@ lz4等压缩算法本身也不提供密码加密。支持的格式家族有lz4�
 | 佛曰/新佛曰 | 諸南隸僧… | ❌服务端 | 追加式 | 未做（同源 unishox 路线，魔曰已覆盖需求） |
 | 火星文 | 囙uos→ | ✅ | 表 | 未做（Abracadabra 声称不支持英文，价值低） |
 | 零宽字符水印/隐文 | 不可见字符 | ✅ | 无 | 可扩充：`--scheme zero` |
-| EXIF/图片元数据藏链接 | 图片描述字段 | ✅ | 无 | 未实现；候选工具exiftool，暂无nde meta命令 |
+| EXIF/图片元数据藏链接 | 图片描述字段 | ✅ | 无 | 未实现；候选工具exiftool，暂无misong meta命令 |
 | 文件名即密码/文件名哈希 | 首N位=密码 | ✅ | 约定 | 属分享约定，写进 guide.txt 模板即可 |
-| 密码变形 | 密码的 反转/base64/兽曰 | ✅ | 同方案 | ✅ 对密码串直接跑 `nde code` 即可 |
+| 密码变形 | 密码的 反转/base64/兽曰 | ✅ | 同方案 | ✅ 对密码串直接跑 `misong code` 即可 |
 
 ## 三、其他社区做法（记录备查）
 

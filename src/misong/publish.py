@@ -74,7 +74,7 @@ def prepare(options: PublishOptions, notify=print) -> Path:
     if o.form != "direct":
         # Stored first for compatibility with the original relay-plan stage ordering.
         stages.insert(0, {"id": "hop", "disk": disk_name(o.hop_disk),
-                          "folder": folder_name + "-hop" if folder_name else f"nde-{job_id}-hop",
+                          "folder": folder_name + "-hop" if folder_name else f"misong-{job_id}-hop",
                           **({"custom_folder": True} if folder_name else {}),
                           "depends_on": "body", "depends_on_all": [s["id"] for s in stages],
                           "files": [], "state": "pending", "uploaded": {}})
@@ -94,7 +94,7 @@ def _guide(plan: dict, body_shares: list[ShareInfo]) -> str:
     return ("【第二跳资源下载指引】\n" + _share_text(body_shares) + "\n"
             + ("任选一个网盘，下载该网盘目录内的全部最终文件/分卷。\n" if len(body_shares) > 1 else "")
             + plan.get("pwd_hint", "请向分享者获取解压密码。")
-            + "\n下载所有分卷至同一目录，从 .001 打开或用 nde unwrap --chain-pwd 还原；密码由分享者单独告知。\n")
+            + "\n下载所有分卷至同一目录，从 .001 打开或用 misong unwrap --chain-pwd 还原；密码由分享者单独告知。\n")
 
 
 def _share_text(shares):
@@ -125,7 +125,7 @@ def import_share(plan_path: Path, stage_id: str, text: str):
                     child["files"] = []
                     child["uploaded"] = {}
                     child["state"] = "pending"
-                    child["folder"] = f"nde-{plan['id']}-{child['id']}-{uuid.uuid4().hex[:6]}"
+                    child["folder"] = f"misong-{plan['id']}-{child['id']}-{uuid.uuid4().hex[:6]}"
                     child.pop("custom_folder", None)
                     child.pop("folder_created", None)
             plan.pop("final_share", None)
@@ -142,7 +142,7 @@ async def publish(plan_path: Path, *, runtime=None, notify=print, cancel: Event 
     with exclusive(plan_path.with_suffix(".lock")):
         plan = json.loads(plan_path.read_text(encoding="utf-8"))
         if plan.get("version") != 2:
-            raise ValueError("旧版中转模板请先用 nde publish --prepare 新建任务，避免上传占位内容")
+            raise ValueError("旧版中转模板请先用 misong publish --prepare 新建任务，避免上传占位内容")
         runtime = runtime or BrowserRuntime(notify=notify, cancel=cancel)
         stages = {s["id"]: s for s in plan["stages"]}
         bodies = [s for s in plan["stages"] if s["id"] != "hop"]

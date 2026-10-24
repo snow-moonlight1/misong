@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from nde import formats, merge, pack
+from misong import formats, merge, pack
 
 
 def main():
@@ -23,7 +23,7 @@ def main():
     ns.work.mkdir(parents=True, exist_ok=False)
     src = ns.work / "large-source.bin"
     with src.open("wb") as fh:
-        fh.write(b"NDE large archive verification\n")
+        fh.write(b"MISONG large archive verification\n")
         fh.truncate(2**32 + 1024**2)
     expected = pack._sha256(src)
     def frames(path):

@@ -9,8 +9,8 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 import pytest
 
-from nde.jobs import save_json
-from nde.rpa.runtime import BrowserRuntime
+from misong.jobs import save_json
+from misong.rpa.runtime import BrowserRuntime
 
 
 PAGE = """<!doctype html><meta charset=utf-8><style>.file-list {min-height: 80px}</style><body>
@@ -129,7 +129,7 @@ def test_real_browser_upload_share_and_session_reuse(tmp_path, local_disk):
             restriction = page.get_by_text("账号涉嫌违规已被封禁，暂时无法使用该功能", exact=True)
             assert await restriction.is_visible()
             await driver.check_restriction(page)  # Must not treat it as an account ban.
-            targets = await driver.upload(page, [file], "nde-test-body")
+            targets = await driver.upload(page, [file], "misong-test-body")
             info = await driver.share(page, targets)
             assert info.url == url + "s/fixture" and info.code == "a123"
             assert driver.status == "ready"
@@ -137,14 +137,14 @@ def test_real_browser_upload_share_and_session_reuse(tmp_path, local_disk):
         assert any(c["name"] == "fixture_session" for c in state["cookies"])
         async with rt.open("fixture") as (driver, page):
             assert any(c["name"] == "fixture_session" for c in await page.context.cookies())
-            await driver.upload(page, [file], "nde-test-body")
-        assert uploads == [("nde-test-body", file.name)]
-        assert stored["nde-test-body"][file.name] == file.read_bytes()
+            await driver.upload(page, [file], "misong-test-body")
+        assert uploads == [("misong-test-body", file.name)]
+        assert stored["misong-test-body"][file.name] == file.read_bytes()
     asyncio.run(scenario())
 
 
 def test_login_window_remains_until_closed(tmp_path, local_disk, monkeypatch):
-    from nde.rpa.drivers import BrowserDiskDriver
+    from misong.rpa.drivers import BrowserDiskDriver
     url, _, _ = local_disk
     rt = runtime_for(tmp_path, url)
     original = BrowserDiskDriver.ensure_login
@@ -166,8 +166,8 @@ def test_login_window_remains_until_closed(tmp_path, local_disk, monkeypatch):
 
 
 def test_explicit_login_waits_without_auth_timeout_and_can_close(tmp_path, local_disk, monkeypatch):
-    from nde.publish import Paused
-    from nde.rpa.drivers import BrowserDiskDriver
+    from misong.publish import Paused
+    from misong.rpa.drivers import BrowserDiskDriver
     url, _, _ = local_disk
     rt = runtime_for(tmp_path, url)
     rt.login_timeout = .01
@@ -191,7 +191,7 @@ def test_explicit_login_waits_without_auth_timeout_and_can_close(tmp_path, local
 
 @pytest.mark.parametrize("persistent", [False, True])
 def test_logged_out_scaffold_does_not_overwrite_last_session(tmp_path, local_disk, persistent):
-    from nde.rpa.drivers import DriverBlocked
+    from misong.rpa.drivers import DriverBlocked
     url, _, _ = local_disk
     rt = runtime_for(tmp_path, url)
     config = rt.profile("fixture")
@@ -232,7 +232,7 @@ def test_dedicated_persistent_browser_retains_site_state(tmp_path, local_disk):
 
 
 def test_persistent_restart_restores_session_cookies_before_login(tmp_path, local_disk, monkeypatch):
-    from nde.rpa.drivers import BrowserDiskDriver
+    from misong.rpa.drivers import BrowserDiskDriver
     url, _, _ = local_disk
     rt = runtime_for(tmp_path, url)
     config = rt.profile("fixture")
@@ -303,38 +303,38 @@ def test_cookie_restore_keeps_newer_profile_state_and_does_not_revive_timed_cook
 
 def test_www_redirect_retains_session_storage_on_the_observed_origin(tmp_path, monkeypatch):
     """A first-party canonical redirect must survive closing and reopening the browser."""
-    from nde.rpa.drivers import BrowserDiskDriver
-    rt = runtime_for(tmp_path, "https://www.nde.test/")
+    from misong.rpa.drivers import BrowserDiskDriver
+    rt = runtime_for(tmp_path, "https://www.misong.test/")
     config = rt.profile("fixture")
-    config.update(hosts=["nde.test"], persistent=True, session_storage=True)
+    config.update(hosts=["misong.test"], persistent=True, session_storage=True)
     save_json(rt.state_dir / "profiles" / "fixture.json", config)
     original = BrowserDiskDriver.ensure_login
 
     async def install_local_routes(self, context):
         async def respond(route):
-            if urlsplit(route.request.url).hostname == "www.nde.test":
-                await route.fulfill(body="<script>location.replace('https://nde.test/')</script>",
+            if urlsplit(route.request.url).hostname == "www.misong.test":
+                await route.fulfill(body="<script>location.replace('https://misong.test/')</script>",
                                     content_type="text/html")
             else:
                 await route.fulfill(body='<div class="file-list">Synthetic account</div>',
                                     content_type="text/html")
-        await context.route(re.compile(r"^https://(?:[^/]+\.)?nde\.test/"), respond)
+        await context.route(re.compile(r"^https://(?:[^/]+\.)?misong\.test/"), respond)
         return await original(self, context)
 
     monkeypatch.setattr(BrowserDiskDriver, "ensure_login", install_local_routes)
 
     async def scenario():
         async with rt.open("fixture") as (_, page):
-            assert page.url == "https://nde.test/"
+            assert page.url == "https://misong.test/"
             await page.evaluate("sessionStorage.setItem('fixture-session', 'synthetic-tab-session')")
         saved = json.loads((rt.state_dir / "session-data/fixture-chromium.json").read_text(encoding="utf-8"))
-        assert saved == {"https://nde.test": {"fixture-session": "synthetic-tab-session"}}
+        assert saved == {"https://misong.test": {"fixture-session": "synthetic-tab-session"}}
         # A local state file must not inject the session into unrelated origins.
-        saved["https://other.nde.test"] = {"fixture-session": "unrelated"}
+        saved["https://other.misong.test"] = {"fixture-session": "unrelated"}
         save_json(rt.state_dir / "session-data/fixture-chromium.json", saved)
         async with rt.open("fixture") as (_, page):
             assert await page.evaluate("sessionStorage.getItem('fixture-session')") == "synthetic-tab-session"
-            await page.goto("https://other.nde.test/")
+            await page.goto("https://other.misong.test/")
             assert await page.evaluate("sessionStorage.getItem('fixture-session')") is None
     asyncio.run(scenario())
 
@@ -369,7 +369,7 @@ def test_share_in_responsive_more_menu(tmp_path, local_disk):
     file.write_text("synthetic guide")
     async def scenario():
         async with rt.open("fixture") as (driver, page):
-            targets = await driver.upload(page, [file], "nde-more")
+            targets = await driver.upload(page, [file], "misong-more")
             info = await driver.share(page, targets)
             assert info.url == url + "s/fixture"
     asyncio.run(scenario())
@@ -385,7 +385,7 @@ def gated_runtime(tmp_path, url):
 
 
 def test_account_prerequisite_is_not_bypassed_by_hidden_file_input(tmp_path, local_disk):
-    from nde.rpa.drivers import AccountActionRequired
+    from misong.rpa.drivers import AccountActionRequired
     url, stored, uploads = local_disk
     runtime = gated_runtime(tmp_path, url)
     file = tmp_path / "guide.txt"
@@ -393,10 +393,10 @@ def test_account_prerequisite_is_not_bypassed_by_hidden_file_input(tmp_path, loc
     async def scenario():
         async with runtime.open("fixture") as (driver, page):
             with pytest.raises(AccountActionRequired, match="无头模式"):
-                await driver.upload(page, [file], "nde-gated")
+                await driver.upload(page, [file], "misong-gated")
             assert await page.locator("#account-gate").is_visible()
     asyncio.run(scenario())
-    assert uploads == [] and stored["nde-gated"] == {}
+    assert uploads == [] and stored["misong-gated"] == {}
 
 
 def test_upload_resumes_after_owner_completes_account_setup(tmp_path, local_disk):
@@ -412,15 +412,15 @@ def test_upload_resumes_after_owner_completes_account_setup(tmp_path, local_disk
                 await page.locator("#account-gate").wait_for(state="visible")
                 await page.locator("#finish-bind").click()
             owner_task = asyncio.create_task(owner())
-            await driver.upload(page, [file], "nde-gated")
+            await driver.upload(page, [file], "misong-gated")
             await owner_task
     asyncio.run(scenario())
-    assert uploads == [("nde-gated", "guide.txt")]
-    assert stored["nde-gated"]["guide.txt"] == file.read_bytes()
+    assert uploads == [("misong-gated", "guide.txt")]
+    assert stored["misong-gated"]["guide.txt"] == file.read_bytes()
 
 
 def test_closed_task_window_pauses_with_saved_authentication(tmp_path, local_disk):
-    from nde.publish import Paused
+    from misong.publish import Paused
     url, _, _ = local_disk
     runtime = runtime_for(tmp_path, url)
     async def scenario():

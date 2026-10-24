@@ -11,7 +11,7 @@ body:
     id: version
     attributes:
       label: 版本
-      description: "`nde --version` 的输出或提交号"
+      description: "`misong --version` 的输出或提交号"
     validations:
       required: true
   - type: dropdown

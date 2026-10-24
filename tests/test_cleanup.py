@@ -10,10 +10,10 @@ from threading import Event
 
 import pytest
 
-from nde import cleanup, pack, workflows
-from nde.jobs import fingerprint, save_json
-from nde.publish import Paused, PublishOptions, import_share, prepare, publish
-from nde.sharing import ShareInfo
+from misong import cleanup, pack, workflows
+from misong.jobs import fingerprint, save_json
+from misong.publish import Paused, PublishOptions, import_share, prepare, publish
+from misong.sharing import ShareInfo
 from test_packaging_redesign import video  # real ffmpeg-generated fixture
 
 
@@ -88,9 +88,9 @@ def test_all_disks_and_relay_finish_before_cleanup_and_replay(tmp_path, form):
     assert (source / '随机源.bin').read_bytes() == original
     assert unrelated.read_bytes() == b'not made by publication'
     assert (path.parent / 'body/RESTORE.txt').is_file()
-    assert list((path.parent / 'body').glob('*.nde.json'))
-    assert list((path.parent / 'body').glob('*.ndesplit.json'))
-    assert (path.parent / 'nde-task.json').is_file()
+    assert list((path.parent / 'body').glob('*.misong.json'))
+    assert list((path.parent / 'body').glob('*.misongsplit.json'))
+    assert (path.parent / 'misong-task.json').is_file()
     assert (path.parent / 'copy/share-plain.txt').is_file()
     again = Runtime(path)
     run(path, again)
@@ -139,7 +139,7 @@ def test_share_or_copy_failure_never_cleans_outputs(tmp_path, monkeypatch, stage
 
     with monkeypatch.context() as patch:
         if stage == 'copy':
-            patch.setattr(importlib.import_module('nde.publish'), 'write_copy', fail)
+            patch.setattr(importlib.import_module('misong.publish'), 'write_copy', fail)
         with pytest.raises(RuntimeError, match='completion failure'):
             run(path, Runtime(path, after_share=fail if stage == 'share' else None))
     assert all(Path(rec['path']).is_file() for rec in load(path)['local_cleanup']['files'])
@@ -261,7 +261,7 @@ def test_standalone_upload_never_deletes_selected_archive(tmp_path):
 
 
 def test_cli_cleanup_is_explicit_and_cannot_override_resume(tmp_path):
-    from nde.cli import main
+    from misong.cli import main
     src = tmp_path / 'generated.bin'
     src.write_bytes(os.urandom(1024))
     out = tmp_path / 'cli-out'
@@ -274,7 +274,7 @@ def test_cli_cleanup_is_explicit_and_cannot_override_resume(tmp_path):
 
 
 def test_desktop_cleanup_default_off_prepare_retains_and_summary_survives(tmp_path):
-    from nde.desktop.api import Api
+    from misong.desktop.api import Api
     from test_desktop_api import FakeRuntime, ok, wait_job
     src = tmp_path / 'generated.bin'
     src.write_bytes(os.urandom(4096))
@@ -300,7 +300,7 @@ def test_desktop_cleanup_default_off_prepare_retains_and_summary_survives(tmp_pa
 @pytest.mark.parametrize('cleanup_state', ['complete', 'partial'])
 def test_ui_cleanup_choice_is_pipeline_only_and_resets_on_reuse(tmp_path, cleanup_state):
     pw = pytest.importorskip('playwright.sync_api')
-    from nde.desktop.api import Api
+    from misong.desktop.api import Api
     root = Path(__file__).resolve().parents[1]
     spec = importlib.util.spec_from_file_location('preview_cleanup', root / 'scripts/ui_preview.py')
     preview = importlib.util.module_from_spec(spec)
@@ -326,7 +326,7 @@ def test_ui_cleanup_choice_is_pipeline_only_and_resets_on_reuse(tmp_path, cleanu
         checkbox = page.get_by_label('上传完成后删除本地加工产物', exact=True)
         assert not checkbox.is_checked()
         checkbox.check()
-        assert page.evaluate('window.__NDE_APP__.S.pipeline.cleanup_after_upload') is True
+        assert page.evaluate('window.__MISONG_APP__.S.pipeline.cleanup_after_upload') is True
         assert '分享完成后删除' in page.locator('.page.active [data-mount="run"]').inner_text()
         page.get_by_role('button', name='加密打包', exact=True).click()
         assert page.locator('.page.active [data-model="cleanup_after_upload"]').count() == 0
@@ -337,5 +337,5 @@ def test_ui_cleanup_choice_is_pipeline_only_and_resets_on_reuse(tmp_path, cleanu
         page.locator('#taskDetail .callout').filter(has_text='源文件').wait_for()
         assert ('已删除 5 个' if cleanup_state == 'complete' else '部分加工产物未清理') in page.locator('#taskDetail').inner_text()
         page.locator('[data-reuse]').click()
-        assert page.evaluate('window.__NDE_APP__.S.pipeline.cleanup_after_upload') is False
+        assert page.evaluate('window.__MISONG_APP__.S.pipeline.cleanup_after_upload') is False
         browser.close()

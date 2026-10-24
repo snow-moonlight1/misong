@@ -8,6 +8,6 @@
 - 报告网盘驱动失效时，请说明网盘、操作步骤和错误提示。`account probe` / `--diagnostics` 生成的截图和 HTML
   可能包含账号信息，请自行打码后再附上。
 - 不接受验证码破解、风控绕过、私有接口签名、批量账号等功能。
-- `src/nde/vendor/` 下的第三方文件保持原样；魔曰不升级到 V3.1.0 及以后（AIPL 与 GPL 不兼容）。
+- `src/misong/vendor/` 下的第三方文件保持原样；魔曰不升级到 V3.1.0 及以后（AIPL 与 GPL 不兼容）。
 
 开发环境与代码结构见[开发指南](docs/dev/development.md)。

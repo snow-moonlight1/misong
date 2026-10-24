@@ -13,8 +13,10 @@ import json
 import re
 from pathlib import Path
 
+from .metadata import SPLIT_EXTS, find_sidecar
+
 PART_SUFFIX = "."
-SIDECAR_EXT = ".ndesplit.json"
+SIDECAR_EXT = SPLIT_EXTS[0]
 
 _SIZE_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*([kKmMgGtT]?)[iI]?[bB]?\s*$")
 _UNITS = {"": 1024**2, "K": 1024, "M": 1024**2, "G": 1024**3, "T": 1024**4}
@@ -115,7 +117,7 @@ def _part_checksums(folder: Path, base: str) -> dict[str, str]:
 def has_verification(any_part: Path) -> bool:
     base, parts = collect_parts(any_part)
     folder = parts[0].parent
-    return (folder / f"{base}{SIDECAR_EXT}").is_file() or bool(_part_checksums(folder, base))
+    return find_sidecar(folder / base, SPLIT_EXTS) is not None or bool(_part_checksums(folder, base))
 
 
 def collect_parts(any_part: Path) -> tuple[str, list[Path]]:
@@ -148,7 +150,7 @@ def join(any_part: Path, out_path: Path | None = None, verify: bool = True) -> P
     if out_path.resolve() in {p.resolve() for p in parts}:
         raise ValueError("合并输出不能覆盖分卷")
 
-    sidecar = next((s for s in [folder / f"{base}{SIDECAR_EXT}"] if s.exists()), None)
+    sidecar = find_sidecar(folder / base, SPLIT_EXTS)
     expected = None
     if sidecar is not None:
         expected = json.loads(sidecar.read_text(encoding="utf-8"))

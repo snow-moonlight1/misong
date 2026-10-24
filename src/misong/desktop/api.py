@@ -21,6 +21,7 @@ from pathlib import Path
 from .. import cleanup, formats, pack, workflows, preflight
 from ..layers import migrate, validate
 from ..jobs import save_json
+from ..metadata import MANIFEST_EXTS
 from ..providers import PROVIDERS
 from ..publish import Paused, PublishOptions, import_share, prepare, publish
 from ..rpa.drivers import PROFILES
@@ -243,7 +244,7 @@ class Api:
                 self._emit("job", state=state, job=dict(job), result=result, error=error)
                 if self._close_when_idle and self._window is not None:
                     self._window.destroy()
-        threading.Thread(target=run, daemon=True, name=f"nde-{kind}").start()
+        threading.Thread(target=run, daemon=True, name=f"misong-{kind}").start()
         return dict(job)
 
     @staticmethod
@@ -787,13 +788,14 @@ class Api:
         if not str(folder) or not folder.is_dir():
             raise ValueError("请选择任务文件夹")
         if not (folder / "relay-plan.json").exists() and workflows.read_meta(folder).get("kind") != "pack":
-            sidecars = sorted(folder.glob("*.nde.json"))
+            sidecars = [(path, ext) for ext in MANIFEST_EXTS for path in sorted(folder.glob("*" + ext))]
             if not sidecars:
-                raise ValueError("该文件夹里没有 relay-plan.json、nde-task.json 或 *.nde.json，无法识别为任务")
-            artifact = folder / sidecars[0].name[:-len(".nde.json")]
+                raise ValueError("该文件夹里没有 relay-plan.json、misong-task.json 或 *.misong.json（兼容旧版任务和清单），无法识别为任务")
+            sidecar, extension = sidecars[0]
+            artifact = folder / sidecar.name[:-len(extension)]
             info = {}
             try:
-                info = json.loads(sidecars[0].read_text(encoding="utf-8"))
+                info = json.loads(sidecar.read_text(encoding="utf-8"))
                 records = [x for x in info.get("layers") or [] if isinstance(x, dict)]  # outermost first
             except (OSError, ValueError, AttributeError):
                 records = []
@@ -824,7 +826,7 @@ class Api:
         folder = Path(folder)
         data = self._pack_summary(folder)
         data["files"] = [{"name": str(p.relative_to(folder)), "size": p.stat().st_size, "path": str(p)}
-                         for p in sorted(folder.rglob("*")) if p.is_file() and p.name != workflows.META_NAME]
+                         for p in sorted(folder.rglob("*")) if p.is_file() and p.name not in workflows.META_NAMES]
         return data
 
     @_safe

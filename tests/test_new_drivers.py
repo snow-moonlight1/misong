@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from nde.rpa.drivers import REGISTRY, DriverBlocked
+from misong.rpa.drivers import REGISTRY, DriverBlocked
 
 
 PAGE = r"""<!doctype html><meta charset=utf-8><body>
@@ -16,7 +16,7 @@ function render(){
  '<button id="menu">添加</button><div id="menuItems" hidden><button id="mkdir">新建文件夹</button><button id="upload">上传文件</button></div>'+
  '<button id="new">新建</button><div id="naming" hidden><input id="name"><button id="confirm">确定</button></div>'+
  '<input type=file id="file" hidden><button id="upload123">上传</button>'+
- '<div class="bcrumb-filename">'+folder+'</div><div id="crumb">'+(folder?'nde-adapte...':'')+'</div>'+
+ '<div class="bcrumb-filename">'+folder+'</div><div id="crumb">'+(folder?'misong-adapte...':'')+'</div>'+
  '<div id="listing"></div><div class="file-operator-group"><button class="file-operator-group-button" id="share">分享</button>'+
  (disk==='123pan'?'<div class="measuring-container" style="position:absolute;left:-9999px"><div class="file-operator-group-button">分享</div></div>':'')+'</div>'+
  '<div id="gate" hidden><span>绑定手机号码</span><button id="owner">完成绑定</button></div>'+
@@ -62,7 +62,7 @@ function render(){
  rows();
 }
 function rows(){
- const values=folder?names.filter(n=>n!==folder):names.filter(n=>n.startsWith('nde-'));
+ const values=folder?names.filter(n=>n!==folder):names.filter(n=>n.startsWith('misong-'));
  document.querySelector('#listing').innerHTML=values.map(n=>'<div class="row"><input type=checkbox><span>'+n+'</span></div>').join('');
  document.querySelectorAll('.row span').forEach(e=>e.ondblclick=()=>{
   folder=e.textContent; history.pushState({},'','?'+(disk==='123pan'?'homeFilePath=12345':'path='+encodeURIComponent('/'+folder)));render();
@@ -99,11 +99,11 @@ def test_provider_upload_collection_share_and_resume(tmp_path, disk):
             await page.locator(".auth").evaluate("e=>e.textContent=''")
             assert not await driver.is_logged_in(page)  # File manager skeleton alone is insufficient.
             await page.locator(".auth").evaluate("e=>e.textContent='已用1GB / 1TB'" if disk == "xunlei" else "e=>e.textContent='1GB/1TB'")
-            targets = await driver.upload(page, files, "nde-test-collection")
+            targets = await driver.upload(page, files, "misong-test-collection")
             # Root is rerendered by normal in-site navigation, including semantic link role.
             if disk != "xunlei":
                 await page.locator("#root").evaluate("e=>e.setAttribute('role','link')")
-            await driver.upload(page, files, "nde-test-collection")  # Resume must not upload duplicates.
+            await driver.upload(page, files, "misong-test-collection")  # Resume must not upload duplicates.
             assert await driver.rows(page, files[0].name).count() == 1
             if disk == "uc":
                 async def owner():

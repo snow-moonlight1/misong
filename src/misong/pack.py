@@ -9,6 +9,7 @@ from pathlib import Path
 
 from . import formats, merge, split
 from .layers import LayerSpec, migrate, output_ext, validate
+from .metadata import MANIFEST_EXTS, find_sidecar
 
 
 def default_output_for(src: Path, outer_fmt: str, disguise: str | None) -> Path:
@@ -56,7 +57,7 @@ def pack(inputs: list[Path], layers: list[LayerSpec], out_path: Path,
         out_path = out_path.with_suffix(output_ext(layers))
     out_path.parent.mkdir(parents=True, exist_ok=True)
     records = []
-    with tempfile.TemporaryDirectory(prefix=".nde-pack-", dir=out_path.parent) as td:
+    with tempfile.TemporaryDirectory(prefix=".misong-pack-", dir=out_path.parent) as td:
         tmp = Path(td)
         current = inputs
         previous_stage = None
@@ -111,7 +112,7 @@ def pack(inputs: list[Path], layers: list[LayerSpec], out_path: Path,
     manifest = {"version": 2, "artifact": out_path.name, "artifacts": artifacts,
                 "artifact_sha256": artifacts[0]["sha256"] if len(artifacts) == 1 else None,
                 "layers": list(reversed(records))}  # outermost first, as in v1
-    out_path.with_name(out_path.name + ".nde.json").write_text(
+    out_path.with_name(out_path.name + MANIFEST_EXTS[0]).write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     return manifest
 
@@ -124,14 +125,14 @@ def unest(artifact: Path, out_dir: Path, passwords: list[str | None],
         base = artifact
         if split._PART_NAME_RE.match(artifact.name):
             base = artifact.with_name(split.collect_parts(artifact)[0])
-        side = base.with_name(base.name + ".nde.json")
-        if not side.exists():
+        side = find_sidecar(base, MANIFEST_EXTS)
+        if side is None:
             return merge.unwrap(artifact, out_dir, chain=passwords)
         mf = json.loads(side.read_text(encoding="utf-8"))
     if mf.get("version") not in (1, 2):
-        raise ValueError("不支持的 .nde.json 清单版本")
+        raise ValueError("不支持的 .misong.json 清单版本")
     out_dir.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix=".nde-unest-", dir=out_dir) as td:
+    with tempfile.TemporaryDirectory(prefix=".misong-unest-", dir=out_dir) as td:
         tmp, current = Path(td), artifact
         for i, rec in enumerate(mf["layers"]):
             step = tmp / f"u{i}"
@@ -143,7 +144,7 @@ def unest(artifact: Path, out_dir: Path, passwords: list[str | None],
                 if current.is_dir():
                     current = current / sm["parts"][0]["name"]
                 if not split._PART_NAME_RE.match(current.name) and _sha256(current) == sm["source_sha256"]:
-                    # The receiver may already have run `nde join` manually.
+                    # The receiver may already have run `misong join` manually.
                     continue
                 if sm["part_count"] > 1:
                     actual = split.collect_parts(current)[1]
