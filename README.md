@@ -1,6 +1,26 @@
-# 密送（Misong）
+<p align="center">
+  <img src="src/misong/desktop/web/branding/logo.png" alt="密送 · Misong 黄油图标" width="132" height="132" />
+</p>
 
-面向个人的**私密备份与加密分发**工具箱（Windows）：把自己的文件打包成多层加密归档，
+<h1 align="center">密送 · Misong</h1>
+
+<p align="center"><strong>层层打包，轻松分发。</strong></p>
+
+<p align="center">面向个人的私密备份与加密分发工具箱</p>
+
+<p align="center">
+  <a href="https://github.com/snow-moonlight1/misong/actions/workflows/tests.yml"><img alt="Tests" src="https://img.shields.io/github/actions/workflow/status/snow-moonlight1/misong/tests.yml?branch=main&amp;style=for-the-badge&amp;label=Tests" /></a>
+  <a href="LICENSE"><img alt="License: GPL-3.0-or-later" src="https://img.shields.io/badge/License-GPL--3.0--or--later-3b82f6?style=for-the-badge" /></a>
+  <a href="https://github.com/snow-moonlight1/misong/blob/main/pyproject.toml"><img alt="Python 3.11+" src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=for-the-badge&amp;logo=python&amp;logoColor=white" /></a>
+  <img alt="Windows 10 / 11" src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078D6?style=for-the-badge" />
+  <a href="docs/dev/development.md"><img alt="Desktop: pywebview" src="https://img.shields.io/badge/Desktop-pywebview-E8B73A?style=for-the-badge&amp;logoColor=white" /></a>
+</p>
+
+<p align="center">
+  <a href="#安装">安装</a> · <a href="#快速开始">快速开始</a> · <a href="docs/user-guide.md">使用指南</a> · <a href="docs/receiver-guide.md">接收方指南</a> · <a href="docs/status.md">支持情况</a> · <a href="CHANGELOG.md">更新记录</a>
+</p>
+
+密送（Misong）是一款 Windows **私密备份与加密分发**工具：把自己的文件打包成多层加密归档，
 按需分卷或嵌入门面视频，自动上传到网盘并创建分享，再把分享链接转换成兽曰/魔曰/哈基米等文本。
 
 > **使用须知**：仅用于你有权处理的资源。请遵守所在地法律和各网盘的用户协议。

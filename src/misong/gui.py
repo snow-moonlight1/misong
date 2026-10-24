@@ -13,6 +13,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from . import pack
+from .desktop.branding import ICON_ICO, configure_windows_app
 from .publish import PublishOptions, import_share, prepare, publish
 from .rpa.runtime import BrowserRuntime, DEFAULT_STATE, ROOT
 from .sharing import encode_copy
@@ -25,6 +26,9 @@ class App:
     def __init__(self, root: tk.Tk):
         self.root = root
         root.title("密送（Misong）· 资源发布工作台")
+        if os.name == "nt":
+            root.iconbitmap(str(ICON_ICO))
+            root.iconbitmap(default=str(ICON_ICO))
         root.geometry("1180x820")
         root.minsize(1020, 740)
         self.events = queue.Queue()
@@ -511,6 +515,7 @@ class App:
 
 
 def main():
+    configure_windows_app()
     root = tk.Tk()
     App(root)
     root.mainloop()

@@ -18,6 +18,15 @@ python -m venv .venv
   会生成 >4GB 样本并保留现场，不自动清理。
 - `misong.py gui --debug`（或 `MISONG_DEBUG=1`）打开 WebView 开发者工具。
 
+## 品牌图标
+
+- 整块黄油图标统一用于发布台左上角、网页图标、Windows 标题栏与任务栏，旧版 Tk 窗口也使用同一 ICO。
+- 原图、导出方式和各尺寸说明见[品牌图标](../branding/README.md)。`scripts/build_branding.py` 使用开发依赖 Pillow，
+  从原图导出 PNG 与多尺寸 ICO；最终图标作为包数据分发，安装后从任意工作目录启动也能读取。
+- Windows 图标使用 pywebview 6.2.1+ 的 `webview.start(icon=...)`；`Misong.Desktop` 是稳定的任务栏分组 ID。
+  老环境升级 GUI 依赖后重启窗口即可：`.venv\Scripts\python -m pip install -e ".[gui]"`。
+- 修改后运行浅色、深色预览，并检查原生窗口标题栏与任务栏；预览截图仍保留在被忽略的 `tmp/` 中。
+
 ## 更名兼容
 
 - 发行包、Python 包和 CLI 均为 `misong`；旧版 `nde` 清单名称集中定义在 `misong.metadata`，

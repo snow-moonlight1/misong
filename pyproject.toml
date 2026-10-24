@@ -30,9 +30,9 @@ Issues = "https://github.com/snow-moonlight1/misong/issues"
 Changelog = "https://github.com/snow-moonlight1/misong/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "Pillow>=10.4"]
 rpa = ["playwright>=1.51,<2"]
-gui = ["pywebview>=5"]
+gui = ["pywebview>=6.2.1"]
 
 [project.scripts]
 misong = "misong.cli:main"
@@ -50,4 +50,4 @@ where = ["src"]
     "vendor/abracadabra/abracadabra-cn.mjs", "vendor/abracadabra/LICENSE", "vendor/abracadabra/README.md",
 ]
 "misong.encoders" = ["abra_bridge.mjs"]
-"misong.desktop" = ["web/*", "web/disks/*"]
+"misong.desktop" = ["web/*", "web/disks/*", "web/branding/*"]

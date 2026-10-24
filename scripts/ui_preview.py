@@ -196,6 +196,8 @@ def main():
         page.expose_function("__py", lambda m, a: json.loads(json.dumps(fake(m, a), ensure_ascii=False)))
         page.add_init_script(MOCK_JS)
         page.goto(WEB.as_uri())
+        page.wait_for_function("() => { const logo = document.querySelector('.brand-mark'); "
+                               "return logo && logo.complete && logo.naturalWidth > 0; }")
         try:
             page.wait_for_selector(".page.active [data-mount='run'] .run", timeout=8000)
         except Exception:

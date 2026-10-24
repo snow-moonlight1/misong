@@ -224,6 +224,7 @@ def test_legacy_debug_variable_and_new_variable_precedence(monkeypatch, new_debu
     api = SimpleNamespace(_attach=lambda _: None, _on_closing=lambda: None)
     monkeypatch.setattr(desktop, "Api", lambda: api)
     monkeypatch.setattr(desktop, "_dpi_aware", lambda: None)
+    monkeypatch.setattr(desktop, "configure_windows_app", lambda: None)
     monkeypatch.setitem(sys.modules, "webview", SimpleNamespace(
         create_window=lambda *a, **kw: window,
         start=lambda *a, **kw: captured.update(kw)))

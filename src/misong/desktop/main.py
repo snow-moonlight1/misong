@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from .api import Api
+from .branding import ICON_ICO, LOGO_PNG, configure_windows_app
 
 WEB = Path(__file__).with_name("web")
 
@@ -51,6 +52,7 @@ def main(debug: bool | None = None) -> int:
         import webview
     except ImportError as exc:
         raise MissingWebView('缺少 pywebview：运行 .venv\\Scripts\\python -m pip install -e ".[gui]"') from exc
+    configure_windows_app()
     _dpi_aware()
     api = Api()
     window = webview.create_window("密送（Misong）资源发布台", url=str(WEB / "index.html"), js_api=api,
@@ -59,7 +61,8 @@ def main(debug: bool | None = None) -> int:
     api._attach(window)
     window.events.closing += api._on_closing
     debug = bool(os.environ.get("MISONG_DEBUG", os.environ.get("NDE_DEBUG"))) if debug is None else debug
-    webview.start(_bind_drop, window, debug=debug, private_mode=True)
+    icon = ICON_ICO if os.name == "nt" else LOGO_PNG
+    webview.start(_bind_drop, window, debug=debug, private_mode=True, icon=str(icon))
     return 0
 
 
