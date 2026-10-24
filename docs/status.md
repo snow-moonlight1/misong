@@ -6,6 +6,13 @@
 项目已更名为密送（Misong），命令与包名为 `misong`。下方历史验收记录保留原始事实，
 当时使用旧名称 `nde`；新名称下的本地回归与兼容验证单独记录，不代表新增真实网盘验收。
 
+## 2026-10-25 仓库与持续集成
+
+- 正式仓库地址为 [snow-moonlight1/misong](https://github.com/snow-moonlight1/misong)，README 安装步骤及项目元数据已使用该地址。
+  发行包作者名称为 White，不包含作者邮箱。
+- GitHub Actions 配置为 Windows、Python 3.11 / 3.13、Node.js 20，安装 Playwright Chromium，
+  执行完整 pytest 及已安装 `misong` 命令的版本、帮助检查；测试不访问真实网盘。
+
 ## 2026-10-24 首发前整理与审计
 
 - `CHANGELOG.md` 的 Unreleased 内容已全部并入 `0.1.0 — 2026-10-24`，首发功能与修复记录均保留。

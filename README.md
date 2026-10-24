@@ -29,7 +29,7 @@
 ## 安装
 
 ```powershell
-git clone <仓库地址> misong
+git clone https://github.com/snow-moonlight1/misong.git misong
 cd misong
 python -m venv .venv
 .venv\Scripts\python -m pip install -e ".[gui,rpa]"

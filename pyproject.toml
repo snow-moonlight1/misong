@@ -9,6 +9,8 @@ description = "Private backup and encrypted sharing toolbox for netdisks: nested
 readme = "README.md"
 license = { text = "GPL-3.0-or-later" }
 requires-python = ">=3.11"
+authors = [{ name = "White" }]
+keywords = ["encryption", "backup", "file-sharing", "7zip", "playwright", "pywebview"]
 classifiers = [
     "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
     "Operating System :: Microsoft :: Windows",
@@ -21,6 +23,11 @@ dependencies = [
     "zstandard>=0.22",
     "brotli>=1.1",
 ]
+
+[project.urls]
+Homepage = "https://github.com/snow-moonlight1/misong"
+Issues = "https://github.com/snow-moonlight1/misong/issues"
+Changelog = "https://github.com/snow-moonlight1/misong/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
