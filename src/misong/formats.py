@@ -163,7 +163,7 @@ def _extract_tar(src: Path, dst_dir: Path, mode: str) -> list[Path]:
 
 
 def _compress_zstd(src: Path, dst: Path) -> None:
-    cctx = zstd.ZstdCompressor(level=ZSTD_LEVEL)
+    cctx = zstd.ZstdCompressor(level=ZSTD_LEVEL, write_checksum=True)
     with src.open("rb") as fi, dst.open("wb") as fo:
         with cctx.stream_reader(fi) as reader, fo:
             shutil.copyfileobj(reader, fo, 1024 * 1024)
@@ -203,7 +203,7 @@ FORMATS: dict[str, Format] = {
     "lz4": Format("lz4", "raw", (".lz4", ".mp4", ".zip"), False, False,
                   "lz4 帧格式；资源圈常把 .7z 改名 .lz4 骗过后缀审查"),
     "zst": Format("zst", "raw", (".zst", ".lz4", ".mp4"), False, False, "zstd level 19"),
-    "br": Format("br", "raw", (".br", ".zst", ".mp4"), False, False, "brotli quality 11"),
+    "br": Format("br", "raw", (".br", ".zst", ".mp4"), False, False, "brotli quality 11；无内建校验，损坏检测依赖 .sha256"),
     "gz": Format("gz", "raw", (".gz", ".lz4", ".mp4"), False, False),
     "bz2": Format("bz2", "raw", (".bz2", ".lz4", ".mp4"), False, False),
     "xz": Format("xz", "raw", (".xz", ".lz4", ".mp4"), False, False),
@@ -267,7 +267,7 @@ def compress(fmt_key: str, src: Path, dst: Path, password: str | None = None,
         elif f.key == "br":
             _compress_brotli(src, dst)
         elif f.key == "lz4":
-            with lz4.frame.open(dst, "wb") as fo, src.open("rb") as fi:
+            with lz4.frame.open(dst, "wb", content_checksum=True) as fo, src.open("rb") as fi:
                 shutil.copyfileobj(fi, fo, 1024 * 1024)
         elif f.key == "gz":
             _stream_compress(gzip, src, dst)

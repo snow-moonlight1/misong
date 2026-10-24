@@ -321,6 +321,21 @@ def test_unwrap_chain_peel_full_depth(sample_dir, tmp_path, small_mp4):
     assert (got / "data.bin").read_bytes() == (sample_dir / "data.bin").read_bytes()
 
 
+@pytest.mark.parametrize("fmt", ["zst", "lz4"])
+def test_raw_frame_checksums_detect_corruption(tmp_path, fmt):
+    """zstd/lz4 帧写入校验和：压缩流中间字节翻转后解压必须报错，
+    不得静默解出乱码。br 无内建校验机制，损坏检测依赖 .sha256，不在本测试范围。"""
+    src = tmp_path / "数据.bin"
+    src.write_bytes(__import__("os").urandom(900_000))  # 不可压缩：坏字节落在 raw block 内
+    art = tmp_path / f"packed.{fmt}"
+    pack.pack([src], [pack.LayerSpec(fmt)], art)
+    data = bytearray(art.read_bytes())
+    data[len(data) // 2] ^= 0xFF
+    art.write_bytes(bytes(data))
+    with pytest.raises(Exception):
+        list(merge.unwrap(art, tmp_path / f"restored-{fmt}", chain=[None]))
+
+
 # ---------------------------------------------------------------- cli smoke
 
 def test_cli_full_chain(tmp_path, sample_dir):
