@@ -140,6 +140,19 @@ class BrowserRuntime:
                         context = await pw.chromium.launch_persistent_context(
                             str(data_dir), **launch_options, accept_downloads=False, locale="zh-CN")
                         browser = context.browser
+                        # Chromium discards session cookies on a clean profile restart.
+                        # Restore only missing session cookies from the verified snapshot;
+                        # keep newer profile cookies, their expiry, and origin storage intact.
+                        if state.exists():
+                            saved = json.loads(state.read_text(encoding="utf-8"))
+                            def cookie_key(cookie):
+                                return (cookie["name"], cookie["domain"], cookie["path"],
+                                        cookie.get("partitionKey"))
+                            present = {cookie_key(c) for c in await context.cookies()}
+                            missing = [c for c in saved.get("cookies", [])
+                                       if c.get("expires") == -1 and cookie_key(c) not in present]
+                            if missing:
+                                await context.add_cookies(missing)
                     else:
                         browser = await pw.chromium.launch(**launch_options)
                         context = await browser.new_context(storage_state=str(state) if state.exists() else None,

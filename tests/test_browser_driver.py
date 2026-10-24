@@ -189,12 +189,14 @@ def test_explicit_login_waits_without_auth_timeout_and_can_close(tmp_path, local
     assert not (rt.state_dir / "fixture.json").exists()
 
 
-def test_logged_out_scaffold_does_not_overwrite_last_session(tmp_path, local_disk):
+@pytest.mark.parametrize("persistent", [False, True])
+def test_logged_out_scaffold_does_not_overwrite_last_session(tmp_path, local_disk, persistent):
     from nde.rpa.drivers import DriverBlocked
     url, _, _ = local_disk
     rt = runtime_for(tmp_path, url)
     config = rt.profile("fixture")
-    config.update(url=url + "?invalid=1", session_invalid="当前设备已被下线，如非本人操作请及时修改密码，避免所存储的数据丢失。")
+    config.update(url=url + "?invalid=1", persistent=persistent,
+                  session_invalid="当前设备已被下线，如非本人操作请及时修改密码，避免所存储的数据丢失。")
     save_json(rt.state_dir / "profiles" / "fixture.json", config)
     original = {"cookies": [], "origins": []}
     state = rt.state_dir / "fixture.json"
@@ -226,6 +228,76 @@ def test_dedicated_persistent_browser_retains_site_state(tmp_path, local_disk):
             driver.profile["logged_in_nonempty"] = True
             driver.profile["logged_in"] = "#breadcrumb"
             assert not await driver.is_logged_in(page)  # A visible empty shell is insufficient.
+    asyncio.run(scenario())
+
+
+def test_persistent_restart_restores_session_cookies_before_login(tmp_path, local_disk, monkeypatch):
+    from nde.rpa.drivers import BrowserDiskDriver
+    url, _, _ = local_disk
+    rt = runtime_for(tmp_path, url)
+    config = rt.profile("fixture")
+    config["persistent"] = True
+    save_json(rt.state_dir / "profiles" / "fixture.json", config)
+    cookies = [
+        {"name": name, "value": "synthetic-" + path, "domain": "127.0.0.1", "path": path,
+         "httpOnly": True, "sameSite": "Lax"}
+        for name, path in (("device_key", "/"), ("device_key", "/files"),
+                           ("hw_token", "/"), ("SERVERID", "/"))
+    ]
+    original = BrowserDiskDriver.ensure_login
+
+    async def require_restored_auth(self, context):
+        # Authentication navigation must already have its session cookies, including
+        # HttpOnly and same-name cookies with distinct paths.
+        actual = {(c["name"], c["path"]): c for c in await context.cookies()}
+        for expected in cookies:
+            restored = actual[(expected["name"], expected["path"])]
+            for key, value in expected.items():
+                assert restored[key] == value
+            assert restored["expires"] == -1
+        return await original(self, context)
+
+    async def scenario():
+        async with rt.open("fixture") as (_, page):
+            await page.context.add_cookies(cookies)
+            await page.evaluate("localStorage.setItem('device', 'keep-profile')")
+        monkeypatch.setattr(BrowserDiskDriver, "ensure_login", require_restored_auth)
+        async with rt.open("fixture") as (_, page):
+            assert await page.evaluate("localStorage.getItem('device')") == "keep-profile"
+    asyncio.run(scenario())
+
+
+def test_cookie_restore_keeps_newer_profile_state_and_does_not_revive_timed_cookies(tmp_path, local_disk):
+    import time
+    url, _, _ = local_disk
+    rt = runtime_for(tmp_path, url)
+    from playwright.async_api import async_playwright
+    config = rt.profile("fixture")
+    config["persistent"] = True
+    save_json(rt.state_dir / "profiles" / "fixture.json", config)
+    future = int(time.time()) + 3600
+    base = {"domain": "127.0.0.1", "path": "/", "httpOnly": False, "secure": False, "sameSite": "Lax"}
+    save_json(rt.state_dir / "fixture.json", {"cookies": [
+        {**base, "name": "device_key", "value": "old-session", "expires": -1},
+        {**base, "name": "expired-auth", "value": "expired", "expires": 1},
+        {**base, "name": "removed-auth", "value": "removed", "expires": future},
+    ], "origins": [{"origin": url.rstrip("/"), "localStorage": [{"name": "device", "value": "old"}]}]})
+
+    async def scenario():
+        async with async_playwright() as pw:
+            context = await pw.chromium.launch_persistent_context(
+                str(rt.state_dir / "browser-data" / "fixture" / "chromium"), headless=True)
+            await context.add_cookies([{**base, "name": "device_key", "value": "newer", "expires": future}])
+            page = context.pages[0]
+            await page.goto(url)
+            await page.evaluate("localStorage.setItem('device', 'newer-profile')")
+            await context.close()
+        async with rt.open("fixture") as (_, page):
+            actual = {c["name"]: c for c in await page.context.cookies()}
+            assert actual["device_key"]["value"] == "newer"
+            assert actual["device_key"]["expires"] == future
+            assert "expired-auth" not in actual and "removed-auth" not in actual
+            assert await page.evaluate("localStorage.getItem('device')") == "newer-profile"
     asyncio.run(scenario())
 
 
