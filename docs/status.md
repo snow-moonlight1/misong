@@ -12,6 +12,8 @@
   发行包作者名称为 White，不包含作者邮箱。
 - GitHub Actions 配置为 Windows、Python 3.11 / 3.13、Node.js 20，安装 Playwright Chromium，
   执行完整 pytest 及已安装 `misong` 命令的版本、帮助检查；测试不访问真实网盘。
+- 首次 CI 暴露预览脚本在 Python 3.11 下不支持的 f-string 引号复用，已将模板索引计算移到字符串外；
+  保留 3.11 测试矩阵，增加实际解释器源码编译检查，安装 FFmpeg 以启用视频相关验证，并输出跳过原因。
 
 ## 2026-10-24 首发前整理与审计
 

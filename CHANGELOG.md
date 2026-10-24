@@ -5,6 +5,7 @@
 ### 发布前改进与修复
 
 - 补齐正式仓库安装地址、项目链接、作者名称与关键词；GitHub Actions 验证 Windows 下的完整回归和 CLI 入口。
+- 修复预览脚本的 Python 3.11 f-string 语法兼容问题；CI 增加源码编译检查并安装 FFmpeg，执行视频相关验证。
 
 - 项目更名为密送（Misong）：发行包、CLI、Python 包与桌面界面统一使用新名称。
   新写 `.misong.json`、`.misongsplit.json`、`misong-task.json`；兼容旧版清单、任务、文案和调试变量，

@@ -293,7 +293,8 @@ def main():
         assert [x.get("type", "archive") for x in saved["layers"]] == ["archive", "archive", "cover", "rename", "split"]
         assert saved["layers"][2]["video"].endswith("intro.mp4")
         assert "secret" not in json.dumps(saved)
-        click(f".page.active [data-tpl='{len(fake.api.templates()["data"]) - 1}']", 300)
+        last_template = len(fake.api.templates()["data"]) - 1
+        click(f".page.active [data-tpl='{last_template}']", 300)
         assert page.locator(".page.active [data-dropkind='video']").inner_text().find("intro.mp4") >= 0
         page.fill(".page.active [data-lpw]:not([disabled])", "secret")
         click(".page.active [data-stepnext]", 400)
