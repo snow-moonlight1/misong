@@ -1,6 +1,8 @@
 # 更新记录
 
-## Unreleased
+## 0.1.0 — 2026-10-24
+
+### 发布前改进与修复
 
 - 项目更名为密送（Misong）：发行包、CLI、Python 包与桌面界面统一使用新名称。
   新写 `.misong.json`、`.misongsplit.json`、`misong-task.json`；兼容旧版清单、任务、文案和调试变量，
@@ -48,7 +50,7 @@
 
 - 修复接收方合卷忽略公开 `.sha256` 的问题；检查缺卷及坏卷，没有校验信息或禁用校验时明确提示“未校验”。
 
-## 0.1.0 — 首个公开版本
+### 首发功能
 
 - 多层打包：archive / cover / split / rename 四类层，`.misong.json` v2 清单（兼容 v1），无清单嗅探还原。
 - 门面视频：7z/ZIP 嵌入 MP4 开头 free box，支持 >4GB（co64 / ZIP64）。
