@@ -97,6 +97,7 @@ $layers = '[{"type":"archive","fmt":"zip"},{"type":"cover","video":"C:/media/int
 - [使用指南](docs/user-guide.md)：桌面应用、发布、中转、续跑与回填
 - [接收方指南](docs/receiver-guide.md)：解码文案、下载与还原
 - [支持情况与验证状态](docs/status.md)：各网盘验收范围、已知限制、待验证项
+- [路线图](docs/roadmap.md)：后续版本规划
 - [开发指南](docs/dev/development.md)：环境、结构、测试、驱动约定
 - 调研资料：[网盘 RPA 现场机制](docs/dev/rpa-research.md)、[加密/中转套路调研](docs/dev/tactics.md)
 - [更新记录](CHANGELOG.md) · [参与贡献](CONTRIBUTING.md) · [安全策略](SECURITY.md)

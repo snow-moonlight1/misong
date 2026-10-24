@@ -1,0 +1,54 @@
+name: 问题反馈
+description: 打包、还原、网盘发布或桌面应用出现错误
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提交前请删除或打码：分享链接、提取码、解压密码、Cookie、账号昵称/手机号、本机用户名路径。
+        安全问题（如密码被写入磁盘或日志）请走仓库 Security 页的私密报告，不要公开提交。
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: "`nde --version` 的输出或提交号"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: 出问题的环节
+      options:
+        - 打包 / 分卷 / 门面视频
+        - 接收方还原（合卷、解包）
+        - 网盘发布（上传、分享）
+        - 链接文案编解码
+        - 桌面应用界面
+        - 其他
+    validations:
+      required: true
+  - type: dropdown
+    id: disks
+    attributes:
+      label: 涉及的网盘
+      multiple: true
+      options: [不涉及, 夸克, 飞猫, 百度, UC, 迅雷, "123"]
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤与实际结果
+      placeholder: 1. … 2. … 看到了什么错误提示？期望是什么？
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志或报错（已脱敏）
+      render: text
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: 确认
+      options:
+        - label: 以上内容和附件不含真实链接、提取码、密码、Cookie 或账号信息
+          required: true

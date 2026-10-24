@@ -320,8 +320,10 @@ def cmd_gui(a):
 
 
 def build_parser() -> argparse.ArgumentParser:
+    from . import __version__
     p = argparse.ArgumentParser(prog="nde", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--version", action="version", version=f"nde {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     n = sub.add_parser("nest", help="一键多层嵌套加密打包")

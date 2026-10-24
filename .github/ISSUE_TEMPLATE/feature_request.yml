@@ -1,0 +1,17 @@
+name: 功能建议
+description: 新功能或改进建议
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: 先看看仓库中的 `docs/roadmap.md` 是否已有计划。不接受验证码破解、风控绕过、私有接口签名、批量账号等功能。
+  - type: textarea
+    id: need
+    attributes:
+      label: 想解决什么问题
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: 设想的做法
