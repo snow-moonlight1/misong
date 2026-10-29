@@ -25,6 +25,7 @@
       <div class="nav-label">管理</div>
       <button class="nav-item" data-page="tasks"><i data-icon="list"></i><span>任务中心</span><b class="nav-badge" id="taskBadge" hidden></b></button>
       <button class="nav-item" data-page="accounts"><i data-icon="user"></i><span>网盘账号</span></button>
+      <button class="nav-item" data-page="settings"><i data-icon="folder"></i><span>设置与诊断</span></button>
     </nav>
     <div class="side-foot">
       <div class="jobcard" id="jobCard" hidden>
@@ -137,10 +138,22 @@
     <section class="page" data-page="accounts">
       <header class="page-head">
         <div><h1>网盘账号</h1><p>首次在弹出的浏览器里登录一次，会话只保存在本机，之后自动复用；过期时再登录即可。</p></div>
-        <div class="head-actions"><button class="btn" id="accountsRefresh"><i data-icon="refresh"></i>刷新状态</button></div>
+        <div class="head-actions"><button class="btn" id="accountsCheckAll">全部检查</button><button class="btn" id="accountsRefresh"><i data-icon="refresh"></i>刷新状态</button></div>
       </header>
       <div class="acct-grid" id="accountGrid"></div>
-      <p class="note">状态说明：<b>未登录</b> → 登录后为 <b>已登录 · 未测试</b> → 本机用该盘完整跑通一次“上传 + 分享”后为 <b>已通过测试</b>。“检测登录”只打开网盘确认是否仍登录、不上传文件；仍登录时保持“已通过测试”，确认不到登录显示 <b>登录失效</b>（请重新登录），页面打不开则显示 <b>检测失败 · 网络</b>（登录未必失效，网络恢复后再检测）。默认使用内置 Chromium；飞猫建议用手机 App 扫码登录。</p>
+      <label class="chk"><input type="checkbox" id="selfcheckSnapshots">只读自检失败时保存本机私密截图和页面（可能含账号信息，不自动导出）</label>
+      <div class="card" id="accountReport"></div>
+      <p class="note">状态说明：<b>未登录</b> → 登录后为 <b>已登录 · 未测试</b> → 本机完整跑通“上传 + 分享”后为 <b>已通过测试</b>。“检测登录”只读、不上传；明确失效时提示重新登录，网络故障、人工验证及无法确认分别显示，不把超时当成登录失效。默认使用内置 Chromium；飞猫建议用手机 App 扫码登录。</p>
+    </section>
+    <section class="page" data-page="settings">
+      <header class="page-head"><div><h1>设置与诊断</h1><p>导入公开模板，或导出用于排障的脱敏诊断包。</p></div></header>
+      <div class="stack"><article class="card"><h2>模板</h2><p>只包含公开配方和选项；密码、源文件路径与钥匙导出选择不会保存。名称冲突会自动改名。</p><div class="btn-row"><button class="btn" data-settings-action="import">导入模板</button><button class="btn" data-settings-action="export">导出模板</button></div></article>
+      <article class="card"><h2>诊断包</h2><p>默认不含截图、登录会话、文案或钥匙。导出的是环境与账号状态摘要及脱敏执行记录。</p>
+      <div class="stack"><label class="chk"><input type="checkbox" id="diagTask">附加任务中心当前选中任务的脱敏摘要</label>
+      <label class="chk"><input type="checkbox" id="diagScreenshots">明确附加截图（可能含账号或文案，不会文字脱敏）</label>
+      <div id="diagShotOptions" hidden><button class="btn" id="diagPickShots">选择截图</button><span id="diagShotCount">尚未选择</span></div>
+      <button class="btn" data-settings-action="diag">导出诊断包</button></div></article>
+      <p id="settingsResult" aria-live="polite"></p></div>
     </section>
   </main>
 </div>

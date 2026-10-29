@@ -175,6 +175,12 @@ function applyLayers(state, layers, opts = {}) {
   state.layers_version = 2;
   state.video = state.disguise = ""; state.split = false;
   state._pwAck = state._lockAck = false;
+  if (opts.options) { state.raw_merge = !!opts.options.raw_merge; state.checksum = !!opts.options.checksum; }
+  if (Array.isArray(opts.text_recipes)) {
+    ensureText(state); state.recipes = opts.text_recipes.map(recipeFromPublic);
+    state.textMode = state.recipes.length ? "recipes" : "legacy";
+    state.textSecrets = {}; state.textVideos = {}; state.exportKeys = [];
+  }
 }
 function layerProblems(st) {
   const problems = []; let single = st.inputs.length === 1 && !st.inputs[0].dir, archive = null;
@@ -325,17 +331,19 @@ function saveTemplateModal(state, page) {
   const withSize = false;
   const layers = layerPayload(state).map((l,i) => ({ ...l, password: undefined, locked: !!(state.layers[i].password || state.layers[i]._lock) && canLock(l.fmt) }));
   const draft = { name: "", extras: true };
-  const box = modal(`<h3>保存为快速模板</h3><p>记录层顺序、各层参数、门面视频路径和“哪些层需要密码”，不会保存任何密码。套用后需要密码的层会标出来，直接在层里填写即可。</p>
+  const box = modal(`<h3>保存为快速模板</h3><p>记录公开层序和“哪些层需要密码”。密码与源视频路径不保存，套用后重新选择和填写。</p>
     <div class="chain-text">${esc(tplDesc({ layers }))}</div>
     <label class="field"><span>模板名称</span><input class="input" maxlength="24" placeholder="例如：发群用 lz4+7z" data-model="name"></label>
-    <label class="check"><input type="checkbox" checked data-model="extras">记住各层参数与门面视频路径</label>
+    <label class="check"><input type="checkbox" checked data-model="extras">记住公开打包选项与文案配方</label>
     <div class="modal-actions"><button class="btn" data-x>取消</button><button class="btn btn-primary" data-ok>保存模板</button></div>`);
   bindModels(box, draft);
   const ok = async () => {
     const name = (draft.name || "").trim(); if (!name) { toast("请填写模板名称", "warn"); return; }
     const exists = (S.meta.templates || []).some((t) => t.name === name);
     try {
-      const list = await call("save_template", name, layers, draft.extras ? (state.disguise || "") : "", draft.extras && withSize ? (state.size || "") : "");
+      const list = await call("save_template", name, layers, draft.extras ? (state.disguise || "") : "", draft.extras && withSize ? (state.size || "") : "", null,
+        draft.extras ? {raw_merge:!!state.raw_merge, checksum:!!state.checksum} : null,
+        draft.extras && page === "pipeline" ? (isRecipeMode(state) ? state.recipes.map(recipeToPublic) : []) : null);
       closeModal(); templatesChanged(list, page, exists ? `已更新模板「${name}」` : `已保存模板「${name}」`);
     } catch (e) { toast(e.message, "err"); }
   };
@@ -376,6 +384,8 @@ function deleteTemplateModal(i, page) {
 /* ---------- account status: one owner-facing state per disk ---------- */
 const fmtShort = (iso) => { const t = fmtTime(iso); return t ? t.slice(5) : ""; };
 const ACCT_STATE = {
+  verification: {cls:"warn", text:"需要人工验证", tip:"请由账号所有者完成验证码或绑定后重新检查"},
+  unknown: {cls:"warn", text:"检查未能确认", tip:"超时或检查环境故障，不能据此判断登录失效"},
   none: { cls: "", text: "未登录", tip: "还没有在本机登录该网盘" },
   loggedin: { cls: "run", text: "已登录 · 未测试", tip: "已登录，但本机还没有用该盘完整跑通一次上传 + 分享" },
   tested: { cls: "ok", text: "已通过测试", tip: "本机已用该盘完整跑通上传 + 分享；检测登录不会改变这一状态" },
@@ -841,6 +851,13 @@ function layerPayload(st) { return st.layers.map((l) => {
 async function resumeTask(plan, page) {
   try {
     const st = page ? S[page] : null;
+    if (!st) {
+      const detail = await call("task_detail", plan);
+      const req = detail.resume_requirements || {};
+      if ((req.recipes || []).length || req.legacy_key || req.hop_password) {
+        resumeCredentials(plan, req); return;
+      }
+    }
     const args = [plan, st ? st.key : "", (st && st.hopPw) || ""];
     if (page === "pipeline" && isRecipeMode(st)) args.push(recipeResumePayload(st));
     const data = await call("resume_task", ...args);
@@ -848,6 +865,33 @@ async function resumeTask(plan, page) {
     renderJobCard(); renderAll();
     go("tasks");
   } catch (e) { toast(e.message, "err"); }
+}
+function resumeCredentials(plan, req) {
+  const recipes = req.recipes || [];
+  const slots = recipes.flatMap(r => [...r.layers, r.carrier].filter(x => x.secret_slot).map(x => ({slot:x.secret_slot, name:r.name})));
+  const videos = recipes.filter(r => r.carrier.format_id === "framewords");
+  const box = modal(`<h2>继续交付</h2><p class="hint">只重试尚未完成的方案。密钥和视频源仅用于本次运行。</p>
+    ${slots.map(x => `<label class="field"><span>${esc(x.name)} · ${esc(x.slot)}</span><input class="input" type="password" autocomplete="off" data-resume-secret="${esc(x.slot)}"></label>`).join("")}
+    ${req.legacy_key ? '<label class="field"><span>魔曰密钥</span><input class="input" type="password" data-resume-legacy placeholder="默认 ABRACADABRA" autocomplete="off"></label>' : ""}
+    ${req.hop_password ? '<label class="field"><span>第一跳压缩密码</span><input class="input" type="password" data-resume-hop autocomplete="off"></label>' : ""}
+    ${videos.map(r => `<label class="field"><span>${esc(r.name)} · 源视频</span><div class="btn-row"><input class="input" readonly data-resume-video="${esc(r.id)}"><button class="btn" data-resume-pick="${esc(r.id)}">选择视频</button></div></label>`).join("")}
+    ${recipes.map(r => `<label class="check"><input type="checkbox" data-resume-export="${esc(r.id)}">为 ${esc(r.name)} 导出 .tkey（敏感文件，默认本地）</label>`).join("")}
+    <div class="modal-actions"><button class="btn" data-cancel>取消</button><button class="btn btn-primary" data-go>继续</button></div>`);
+  $("[data-cancel]", box).onclick = closeModal;
+  $$("[data-resume-pick]", box).forEach(b => b.onclick = async () => {
+    try { const paths = await call("pick_files", false, true); const field = $$("[data-resume-video]", box).find(x => x.dataset.resumeVideo === b.dataset.resumePick); if (paths[0]) field.value = paths[0]; }
+    catch(e) { toast(e.message, "err"); }
+  });
+  $("[data-go]", box).onclick = async () => {
+    const fields = $$("[data-resume-secret]", box), sources = $$("[data-resume-video]", box);
+    if (fields.some(x => !x.value) || sources.some(x => !x.value) || (req.hop_password && !$("[data-resume-hop]", box).value)) { toast("请补齐本次所需密钥和视频", "warn"); return; }
+    const runtime = {secrets:Object.fromEntries(fields.map(x => [x.dataset.resumeSecret,x.value])), video_sources:Object.fromEntries(sources.map(x => [x.dataset.resumeVideo,x.value])), export_keys:$$("[data-resume-export]", box).filter(x => x.checked).map(x => x.dataset.resumeExport)};
+    const legacy = $("[data-resume-legacy]", box)?.value || "", hop = $("[data-resume-hop]", box)?.value || "";
+    const button = $("[data-go]", box); button.disabled = true;
+    try { S.job = await call("resume_task", plan, legacy, hop, runtime); closeModal(); renderJobCard(); go("tasks"); }
+    catch(e) { toast(e.message, "err"); button.disabled = false; }
+    finally { runtime.secrets = {}; }
+  };
 }
 async function pauseJob() { try { await call("pause"); toast("正在暂停…", "warn"); } catch (e) { toast(e.message, "err"); } }
 $("#jobPause").addEventListener("click", pauseJob);
@@ -871,6 +915,7 @@ function onJobEvent(ev) {
   S.job = null; renderJobCard();
   if (kind === "account") {
     if (state === "done") toast("账号操作完成", "ok"); else toast(error || "账号操作未完成", "warn");
+    S.accountReport = result && (result.checks || (result.selfcheck ? [result.selfcheck] : null));
     loadAccounts();
   } else if (S[page]) {
     if (state === "done") { S[page].result = result || { ok: true }; toast("任务完成", "ok"); }
@@ -891,6 +936,7 @@ function rerender(page) {
   else if (page === "codec") renderCodec();
   else if (page === "tasks") renderTasks();
   else if (page === "accounts") renderAccounts();
+  else if (page === "settings") renderSettings();
 }
 function renderAll() { ["pipeline", "pack", "upload", "restore", "textrestore"].forEach((p) => { if (S.page === p) rerender(p); else runPanel(p); }); }
 
@@ -952,11 +998,16 @@ function newRecipe(st, preset) {
   else if (preset === "base64") { r.name = "Base64 纯文本"; r.layers = [{ id: "l1", scheme: "base64", keyed: false }]; }
   return r;
 }
-function layerSlot(r, l) { return r.id + "/" + l.id; }
-function videoSlot(r) { return r.id + "/video"; }
+function layerSlot(r, l) { return l.secretSlot || r.id + "/" + l.id; }
+function videoSlot(r) { return r.secretSlot || r.id + "/video"; }
+function recipeFromPublic(r) {
+  return {id:r.id, name:r.name, layers:r.layers.map(l => ({id:l.id, scheme:l.scheme, params:l.params,
+    keyed:!!l.secret_slot, secretSlot:l.secret_slot})), carrier:r.carrier.format_id,
+    videoPw:!!r.carrier.secret_slot, secretSlot:r.carrier.secret_slot};
+}
 function recipeToPublic(r) {
   return { version: 1, id: r.id, name: r.name || r.id,
-    layers: r.layers.map((l) => ({ id: l.id, scheme: l.scheme, version: 1, params: {}, secret_slot: l.scheme === "mojibake" && l.keyed ? layerSlot(r, l) : null })),
+    layers: r.layers.map((l) => ({ id: l.id, scheme: l.scheme, version: 1, params: l.params || {}, secret_slot: l.scheme === "mojibake" && l.keyed ? layerSlot(r, l) : null })),
     carrier: r.carrier === "framewords"
       ? { format_id: "framewords", version: 1, mode: "standard", params: {}, secret_slot: r.videoPw ? videoSlot(r) : null }
       : { format_id: "text", version: 1, mode: "plain", params: {}, secret_slot: null } };
@@ -1053,6 +1104,7 @@ function bindRecipeEditor(el, st) {
     $("[data-rname]", card).addEventListener("input", (e) => { r.name = e.target.value; });
     $("[data-rname]", card).addEventListener("change", () => runPanel("pipeline"));
     $("[data-rrm]", card).addEventListener("click", () => {
+      [...r.layers.map(l => layerSlot(r,l)), videoSlot(r)].forEach(k => delete st.textSecrets[k]);
       st.recipes.splice(+card.dataset.recipe, 1);
       st.exportKeys = st.exportKeys.filter((id) => id !== r.id); delete st.textVideos[r.id];
       Object.keys(st.textSecrets).forEach((k) => { if (k.startsWith(r.id + "/")) delete st.textSecrets[k]; });
@@ -1061,7 +1113,7 @@ function bindRecipeEditor(el, st) {
     $("[data-tladd]", card).addEventListener("click", () => { let n = r.layers.length + 1; while (r.layers.some((l) => l.id === "l" + n)) n++; r.layers.push({ id: "l" + n, scheme: "base64", keyed: false }); redraw(); });
     $$("[data-tl]", card).forEach((row) => {
       const j = +row.dataset.tl, l = r.layers[j];
-      $("[data-tlscheme]", row).addEventListener("change", (e) => { l.scheme = e.target.value; l.keyed = l.scheme === "mojibake"; redraw(); });
+      $("[data-tlscheme]", row).addEventListener("change", (e) => { delete st.textSecrets[layerSlot(r,l)]; l.scheme = e.target.value; l.params = {}; l.keyed = l.scheme === "mojibake"; redraw(); });
       const k = $("[data-tlkeyed]", row); if (k) k.addEventListener("change", () => { l.keyed = k.checked; if (!l.keyed) delete st.textSecrets[layerSlot(r, l)]; redraw(); });
       const up = $("[data-tlup]", row); up.addEventListener("click", () => { if (j > 0) { r.layers.splice(j - 1, 0, r.layers.splice(j, 1)[0]); redraw(); } });
       const dn = $("[data-tldown]", row); dn.addEventListener("click", () => { if (j < r.layers.length - 1) { r.layers.splice(j + 1, 0, r.layers.splice(j, 1)[0]); redraw(); } });
@@ -1257,7 +1309,7 @@ function renderTasks() {
     const err = t.error && t.state !== "complete" ? `<span class="task-err" title="${esc(t.error)}">${icon("warn")}${esc(t.error)}</span>` : "";
     return `<div class="task ${S.tasks.sel === taskId(t) ? "on" : ""}" data-task="${esc(taskId(t))}" role="button" tabindex="0">
       <div class="task-top"><button class="star ${t.starred ? "on" : ""}" data-star="${esc(t.dir)}" title="${t.starred ? "取消收藏" : "收藏"}" aria-label="收藏">${icon(t.starred ? "starfill" : "star")}</button><b>${esc(t.title)}</b>${badge(t.state)}</div>
-      ${t.note ? `<div class="task-note">${esc(t.note)}</div>` : ""}
+      ${t.delivery ? `<div class="task-note">${esc(t.delivery.label)}</div>` : ""}${t.note ? `<div class="task-note">${esc(t.note)}</div>` : ""}
       <div class="task-meta"><span>${kindLabel}</span>${disks ? `<span class="task-disks">${disks}</span>` : ""}<span>${esc(fmtTime(t.updated || t.created))}</span>${err}</div></div>`;
   }).join("");
   paintIcons(list);
@@ -1294,7 +1346,7 @@ function renderTaskDetail() {
   const isPack = d.kind === "pack";
   const stats = [];
   stats.push(["类型", isPack ? "加密打包" : d.kind === "upload" ? "上传分享" : "一条龙发布"]);
-  stats.push(["状态", STATE_LABEL[d.state] || d.state]);
+  stats.push(["状态", d.delivery?.label || STATE_LABEL[d.state] || d.state]);
   if (d.chain) stats.push(["格式链", d.chain]);
   if (d.kind === "pipeline") stats.push(["分享方式", S.meta.forms[d.form] || d.form]);
   stats.push(["创建时间", fmtTime(d.created)]);
@@ -1321,7 +1373,7 @@ function renderTaskDetail() {
   host.innerHTML = `<div class="detail"><div class="detail-head"><div class="detail-title"><button class="star big ${d.starred ? "on" : ""}" data-dstar title="${d.starred ? "取消收藏" : "收藏"}" aria-label="收藏">${icon(d.starred ? "starfill" : "star")}</button><div><h2>${esc(d.title)}</h2><p>${esc(d.dir)}</p></div></div>
     <div class="btn-row">${canResume ? `<button class="btn btn-primary" data-resume="${esc(d.plan)}" ${running ? "disabled" : ""}>${icon("play")}继续</button>` : ""}<button class="btn" data-reuse title="把这个任务的打包、网盘和文案设置填到新建页面（不含密码和资源）">${icon("refresh")}复用设置</button><button class="btn" data-open="${esc(d.dir)}" title="打开当前选中任务的文件夹">${icon("folder")}打开当前任务目录</button>
     <button class="btn btn-ghost icon-only" data-edit title="重命名 / 备注" aria-label="编辑">${icon("edit")}</button><button class="btn btn-ghost icon-only btn-danger" data-del title="${d.imported ? "从列表移除（保留文件）" : "删除（移到回收站）"}" aria-label="删除" ${running ? "disabled" : ""}>${icon("trash")}</button></div></div>
-    ${errHtml}${noteHtml}${cleanupNote(d)}<div class="detail-grid">${statsHtml}</div>${stages}${copies}${filesHtml}</div>`;
+    ${errHtml}${noteHtml}${cleanupNote(d)}<div class="detail-grid">${statsHtml}</div>${stages}${d.delivery?.recipes?.length ? `<div class="card"><h3>交付方案</h3>${d.delivery.recipes.map(r => `<p>${esc(r.name)} · ${esc(STATE_LABEL[r.status] || r.status)} ${esc(r.error_code || "")}</p>`).join("")}</div>` : ""}${copies}${filesHtml}</div>`;
   paintIcons(host);
   $$("[data-open]", host).forEach((b) => b.addEventListener("click", () => call("open_path", b.dataset.open).catch((e) => toast(e.message, "err"))));
   const rb = $("[data-resume]", host); if (rb) rb.addEventListener("click", () => resumeTask(rb.dataset.resume));
@@ -1434,17 +1486,46 @@ function renderAccounts() {
       ? `<div class="acct-hint">此盘已记住使用 ${esc(labels[a.browser] || a.browser)}；如遇问题可改回 Chromium 后重新登录。</div>` : "";
     return `<div class="acct" data-acct="${a.key}"><div class="acct-top">${avatar(a.key, a.label)}<div><b>${esc(a.label)}</b><div class="acct-badges"><span class="badge ${s.cls}" title="${esc(s.tip)}">${esc(s.text)}</span>${s.when ? `<small class="acct-when">${esc(s.when)}</small>` : ""}</div></div></div>
       ${err}<div class="acct-actions">${browserSelect(a)}
-      <button class="btn" data-op="probe" title="打开网盘确认是否仍处于登录状态，不上传文件；仍登录时保持“已通过测试”">${icon("refresh")}检测登录</button><button class="btn btn-primary" data-op="login">${icon("user")}登录</button></div>${hint}</div>`;
+      <button class="btn" data-op="check">${icon("refresh")}检测登录</button><button class="btn" data-op="selfcheck">只读自检</button><button class="btn btn-primary" data-op="login">${icon("user")}登录</button></div>${hint}</div>`;
   }).join("");
   paintIcons(grid);
   $$("[data-acct]", grid).forEach((card) => {
     const disk = card.dataset.acct; const sel = $("select", card);
     $$("[data-op]", card).forEach((b) => b.addEventListener("click", async () => {
       if (S.job) { toast("已有任务运行中，请稍后", "warn"); return; }
-      try { const data = await call("account_action", disk, b.dataset.op, sel.value); S.job = data; renderJobCard(); renderAll(); toast(b.dataset.op === "probe" ? "正在检测登录…" : "已在浏览器中打开，请完成登录", ""); }
+      try { const data = b.dataset.op === "check" ? await call("check_accounts", disk, sel.value) : b.dataset.op === "selfcheck" ? await call("selfcheck", disk, sel.value, $("#selfcheckSnapshots").checked) : await call("account_action", disk, b.dataset.op, sel.value); S.job = data; renderJobCard(); renderAll(); toast(b.dataset.op === "login" ? "已在浏览器中打开，请完成登录" : "正在只读检查…", ""); }
       catch (e) { toast(e.message, "err"); }
     }));
   });
+  const reports = S.accountReport || [];
+  $("#accountReport").innerHTML = reports.length ? `<h3>本次检查结果</h3>${reports.map(r => `<p>${esc(r.disk)} · ${esc(r.status)} · ${esc(r.code)}${(r.selectors || []).map(s => `<br>${esc(s.item)}：${esc(s.status)}`).join("")}</p>`).join("")}` : "";
+}
+
+function renderSettings() {
+  $("#settingsResult").textContent = S.settingsResult || "密送 " + (S.meta.version || "") + " · 密钥不保存到模板或设置";
+}
+async function settingsAction(kind) {
+  try {
+    if (S.job) throw new Error("请先暂停正在运行的任务");
+    let result;
+    if (kind === "import") {
+      const paths = await call("pick_files", false); if (!paths[0]) return;
+      result = await call("import_templates", paths[0]); templatesChanged(result.templates, null);
+      S.settingsResult = `已导入 ${result.added.length} 个模板${result.renamed.length ? "，重名模板已自动改名" : ""}`;
+    } else {
+      const path = await call("pick_save_file", kind === "export" ? "templates" : "diagnostics"); if (!path) return;
+      if (kind === "export") result = await call("export_templates", path);
+      else {
+        const selected = S.tasks.items.find(t => taskId(t) === S.tasks.sel);
+        if ($("#diagTask").checked && !selected) throw new Error("请先在任务中心选中任务");
+        const shots = $("#diagScreenshots").checked ? (S.settingsScreenshots || []) : [];
+        if ($("#diagScreenshots").checked && !shots.length) throw new Error("请选择本次明确附加的截图");
+        result = await call("export_diagnostics", path, $("#diagTask").checked ? [selected.dir] : [], shots, S.logs.map(x => x.text));
+      }
+      S.settingsResult = "已导出：" + result.path;
+    }
+    renderSettings(); toast("操作完成", "ok");
+  } catch(e) { toast(e.message, "err"); }
 }
 
 /* ======================================================================
@@ -1513,6 +1594,10 @@ function bindShell() {
   $("#tasksImport").addEventListener("click", importTask);
   $("#taskSearch").addEventListener("input", (e) => { S.tasks.query = e.target.value; renderTasks(); });
   $("#accountsRefresh").addEventListener("click", loadAccounts);
+  $("#accountsCheckAll").addEventListener("click", async () => { try { if (S.job) throw new Error("请先等待当前任务完成"); S.job = await call("check_accounts"); renderJobCard(); } catch(e) { toast(e.message,"err"); } });
+  $$("[data-settings-action]").forEach(b => b.onclick = () => settingsAction(b.dataset.settingsAction));
+  $("#diagScreenshots").onchange = e => { $("#diagShotOptions").hidden = !e.target.checked; if (!e.target.checked) { S.settingsScreenshots = []; $("#diagShotCount").textContent = "尚未选择"; } };
+  $("#diagPickShots").onclick = async () => { try { const paths=await call("pick_files",true); S.settingsScreenshots=paths; $("#diagShotCount").textContent=`已选择 ${paths.length} 张（请自行检查内容）`; } catch(e) { toast(e.message,"err"); } };
   $$("#taskFilter button").forEach((b) => b.addEventListener("click", () => { $$("#taskFilter button").forEach((x) => x.classList.toggle("on", x === b)); S.tasks.filter = b.dataset.v; renderTasks(); }));
   bindCodec();
   // global drag-drop to the active page

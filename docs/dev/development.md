@@ -39,8 +39,8 @@ python -m venv .venv
 
 ## 目录结构
 
-当前发布/开发范围以[路线图](../roadmap.md)与[支持情况](../status.md)为准。v0.2 下一主线是
-[文案处理链、`.tkey` 与帧语官网 RPA](../plans/2026-10-29-text-pipeline/README.md)，A/B/C 已完成 S 后端集成，GUI 层编辑及还原表单仍待 E。
+当前发布/开发范围以[路线图](../roadmap.md)与[支持情况](../status.md)为准。v0.2 已集成
+[文案处理链、`.tkey` 与帧语官网 RPA](../plans/2026-10-29-text-pipeline/README.md)，桌面层编辑、文案还原、任务中心续跑和 F/G/H 已统一接线，当前验证见[0.2.0 验收记录](../releases/0.2.0.md)。
 多 agent 协作按[并行分包](../plans/2026-10-29-text-pipeline/PARALLEL.md)分配文件。03-framewords-compat 与两份净室提示词为后续备用，不属于本轮主线。
 公共 Python 类型位于 `text_contracts.py` 和 `carriers/base.py`，使用及签名见[契约 v1](../plans/2026-10-29-text-pipeline/CONTRACTS.md)。运行时对象不可直接写入任务/设置，只有严格白名单的公开配方可持久化。基础类型不导入 Playwright，纯文字操作不启动浏览器。新增命令、桌面桥、发布逐方案检查点和恢复行为见[文案交付集成](text-delivery.md)。
 未来启动净室任务时，研究/实现侧不得跟随链接读取历史源码调研 `RESEARCH.md` 或 `tmp/` 中第三方研究材料。

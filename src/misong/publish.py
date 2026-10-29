@@ -162,7 +162,8 @@ def import_share(plan_path: Path, stage_id: str, text: str):
 
 async def publish(plan_path: Path, *, runtime=None, notify=print, cancel: Event | None = None,
                   key="ABRACADABRA", hop_password: str | None = None,
-                  text_context=None, text_video_sources=None, export_text_keys=(), text_carrier=None) -> dict:
+                  text_context=None, text_video_sources=None, export_text_keys=(), text_carrier=None,
+                  health=None) -> dict:
     """Runtime injection lets tests exercise the full orchestration without network."""
     from .rpa.runtime import BrowserRuntime
     plan_path = Path(plan_path).resolve()
@@ -188,6 +189,18 @@ async def publish(plan_path: Path, *, runtime=None, notify=print, cancel: Event 
         try:
             plan["state"] = "running"
             checkpoint()
+            # Production runtime always supports passive inspection. Injected
+            # test/custom runtimes supply their own health service explicitly.
+            if health is None and hasattr(runtime, "open_inspection"):
+                from .account_health import AccountHealth
+                health = AccountHealth(runtime)
+            if health is not None:
+                preflight_result = await health.preflight(plan, timeout=45, headed_retry=True)
+                plan["account_preflight"] = preflight_result.to_dict()
+                checkpoint()
+                if any(r.status == "cancelled" for r in preflight_result.results):
+                    raise Paused("发布前检查已取消")
+                preflight_result.require_ready()
             for stage in order:
                 check_cancel()
                 if stage["id"] == "hop" and not stage["files"]:

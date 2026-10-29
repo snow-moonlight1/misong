@@ -415,10 +415,52 @@ def cmd_account(a):
             status = json.loads(status_path.read_text(encoding="utf-8"))["status"] if status_path.exists() else "probe"
             print(f"{disk}: {status} / {'有本机会话（需在线确认有效）' if state.exists() else '未登录'}")
         return 0
+    if a.op == "check":
+        from .account_health import AccountHealth
+        if bool(a.disk) == bool(a.all):
+            raise ValueError("请选择一个网盘或 --all")
+        runtime = BrowserRuntime(headless=a.headless, browser_channel=a.browser,
+                                 notify=lambda message: print(message, file=sys.stderr))
+        health = AccountHealth(runtime)
+        results = asyncio.run(health.check_all(None if a.all else [a.disk], timeout=a.timeout,
+                                              headed_retry=a.headed_retry))
+        print(json.dumps([r.to_dict() for r in results], ensure_ascii=False, indent=2))
+        return 0 if all(r.status == "logged_in" for r in results) else 1
     if not a.disk:
         raise ValueError("请指定网盘：" + ", ".join(PROFILES))
     runtime = BrowserRuntime(browser_channel=a.browser)
     asyncio.run(getattr(runtime, a.op)(disk_name(a.disk)))
+    return 0
+
+
+def cmd_selfcheck(a):
+    from .account_health import AccountHealth
+    from .rpa.runtime import BrowserRuntime
+    health = AccountHealth(BrowserRuntime(headless=a.headless, browser_channel=a.browser, diagnostics=a.diagnostics,
+                                         notify=lambda message: print(message, file=sys.stderr)))
+    report = asyncio.run(health.selfcheck(a.disk, timeout=a.timeout, headed_retry=a.headed_retry))
+    print(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
+    return 0 if report.status == "passed" else 1
+
+
+def cmd_diag(a):
+    from .diagnostics import export_diagnostics
+    from .paths import resolve_paths
+    from .eventlog import recent
+    result = export_diagnostics(Path(a.out), tasks=[Path(p) for p in a.task],
+                                state_dir=resolve_paths().state, screenshots=[Path(p) for p in a.screenshot],
+                                log_lines=recent(resolve_paths().state))
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_template(a):
+    from .desktop.api import Api
+    api = Api()
+    response = api.export_templates(a.file) if a.op == "export" else api.import_templates(a.file)
+    if not response["ok"]:
+        raise ValueError(response["error"])
+    print(json.dumps(response["data"], ensure_ascii=False, indent=2))
     return 0
 
 
@@ -608,10 +650,32 @@ def build_parser() -> argparse.ArgumentParser:
     pub.add_argument("--browser", choices=["chromium", "chrome", "msedge"], help="使用自带 Chromium 或已安装的正式版 Chrome/Edge；默认复用账号选择")
     pub.set_defaults(fn=cmd_publish)
     ac = sub.add_parser("account", help="网盘登录、探测与驱动状态")
-    ac.add_argument("op", choices=["login", "probe", "status"])
+    ac.add_argument("op", choices=["login", "probe", "status", "check"])
     ac.add_argument("disk", nargs="?")
     ac.add_argument("--browser", choices=["chromium", "chrome", "msedge"], help="登录/探测浏览器；启动成功后记住选择供后续发布使用")
+    ac.add_argument("--all", action="store_true", help="检查全部六个自动网盘，不执行登录")
+    ac.add_argument("--headless", action="store_true", help="检查时无头运行")
+    ac.add_argument("--headed-retry", action="store_true", help="无头不确定时在总超时内最多有头重试一次")
+    ac.add_argument("--timeout", type=float, default=45, help="每盘检查总秒数（含浏览器启动）")
     ac.set_defaults(fn=cmd_account)
+    sc = sub.add_parser("selfcheck", help="只读检查网盘关键选择器，不上传或分享")
+    sc.add_argument("--disk", required=True)
+    sc.add_argument("--headless", action="store_true")
+    sc.add_argument("--headed-retry", action="store_true")
+    sc.add_argument("--timeout", type=float, default=45)
+    sc.add_argument("--browser", choices=["chromium", "chrome", "msedge"])
+    sc.add_argument("--diagnostics", action="store_true", help="明确保存失败页面截图/HTML到私密状态目录，可能含账号信息")
+    sc.set_defaults(fn=cmd_selfcheck)
+    dg = sub.add_parser("diag", help="导出白名单诊断包，默认不含截图或会话")
+    dg.add_argument("op", choices=["export"])
+    dg.add_argument("-o", "--out", required=True)
+    dg.add_argument("--task", action="append", default=[], help="明确选择的任务目录，可重复")
+    dg.add_argument("--screenshot", action="append", default=[], help="明确附加的敏感截图，不保证文本脱敏")
+    dg.set_defaults(fn=cmd_diag)
+    tp = sub.add_parser("template", help="导入/导出公开设置模板，不保存密码")
+    tp.add_argument("op", choices=["import", "export"])
+    tp.add_argument("file", help="模板 JSON 文件；导出目标不得存在")
+    tp.set_defaults(fn=cmd_template)
     imp = sub.add_parser("share-import", help="手动上传后回填分享文本")
     imp.add_argument("--plan", required=True)
     imp.add_argument("--stage", choices=["body", "hop"], required=True)

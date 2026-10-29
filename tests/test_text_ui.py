@@ -189,3 +189,60 @@ def test_manual_recipe_restore_prompts_for_slots(ui):
     cfg = requests(fake, "start_text_restore")[-1][0]
     assert cfg["recipe"] == recipe and cfg["secrets"] == {"m/x": SECRETS[0]} and "key_file" not in cfg
     assert not errors
+
+
+def test_task_center_resume_collects_only_pending_recipe_secrets(ui):
+    page, fake, api, errors = ui
+    page.set_viewport_size({"width": 940, "height": 880})
+    r = DeliveryRecipe(1, "pending", "待重试方案", (TextLayer("magic", "mojibake", secret_slot="pending/magic"),)).to_dict()
+    fake.edits[r"D:\misong\runs\a"].update(
+        state="blocked", delivery={"label": "分享完成、文案未完成", "recipes": []},
+        resume_requirements={"recipes": [r], "legacy_key": False, "hop_password": False})
+    page.click(".nav-item[data-page='tasks']")
+    page.click("#tasksRefresh")
+    page.wait_for_function("() => document.querySelector('#taskDetail').textContent.includes('分享完成、文案未完成')")
+    title = page.locator("#taskDetail .detail-title").bounding_box()
+    actions = page.locator("#taskDetail .detail-head > .btn-row").bounding_box()
+    assert title["width"] >= 180 and actions["y"] >= title["y"] + title["height"]
+    assert page.locator("#taskDetail h2").bounding_box()["height"] < 60
+    page.click("#taskDetail [data-resume]")
+    page.wait_for_selector("#modal [data-resume-secret='pending/magic']")
+    assert page.locator("#modal [data-resume-export]:checked").count() == 0
+    page.fill("#modal [data-resume-secret='pending/magic']", SECRETS[0])
+    page.click("#modal [data-go]")
+    page.wait_for_function("() => !!window.__MISONG_APP__.S.job")
+    args = requests(fake, "resume_task")[-1]
+    assert args[3] == {"secrets": {"pending/magic": SECRETS[0]}, "video_sources": {}, "export_keys": []}
+    assert page.locator("#modal").is_hidden()
+    for name, args in fake.requests:
+        if name == "save_settings":
+            assert SECRETS[0] not in json.dumps(args)
+    assert not errors
+
+
+def test_imported_template_applies_options_and_exact_public_recipe(ui):
+    page, fake, api, errors = ui
+    r = DeliveryRecipe(1, "imported", "文案", (TextLayer("magic", "mojibake", params={"mode": "old"}, secret_slot="custom/slot"),)).to_dict()
+    page.evaluate("""r => {const A=window.__MISONG_APP__;
+      A.S.meta.templates=[{name:'导入测试',layers:[{fmt:'7z',locked:true,header_enc:true}],
+        options:{checksum:true,raw_merge:false},text_recipes:[r]}];
+      A.S.pipeline._step=2; A.rerender('pipeline'); }""", r)
+    page.click(".page.active [data-tpl='0']")
+    result = page.evaluate("""() => {const A=window.__MISONG_APP__,p=A.S.pipeline;
+      return {recipe:A.recipeToPublic(p.recipes[0]),checksum:p.checksum,secrets:p.textSecrets,exports:p.exportKeys};} """)
+    assert result == {"recipe": r, "checksum": True, "secrets": {}, "exports": []}
+    assert not errors
+
+
+def test_settings_and_batch_check_controls_are_wired(ui):
+    page, fake, api, errors = ui
+    page.click(".nav-item[data-page='settings']")
+    assert page.locator(".page.active [data-settings-action]").count() == 3
+    assert "截图" in page.locator(".page.active").inner_text()
+    assert not page.locator("#diagScreenshots").is_checked()
+    page.click(".nav-item[data-page='accounts']")
+    assert not page.locator("#selfcheckSnapshots").is_checked()
+    page.click("#accountsCheckAll")
+    page.wait_for_function("() => !!window.__MISONG_APP__.S.job")
+    assert requests(fake, "check_accounts")[-1] == []
+    assert not errors

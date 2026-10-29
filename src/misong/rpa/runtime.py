@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import asyncio
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -111,6 +112,89 @@ class BrowserRuntime:
         except PlaywrightError:
             # The owner can close the login window while its final snapshot is pending.
             return
+
+    @asynccontextmanager
+    async def open_inspection(self, disk):
+        """Disposable context using the last verified snapshot and configured channel.
+
+        Never call ensure_login/_save_auth, launch the live persistent profile, update
+        browser preferences, or replace authentication snapshots during an observation.
+        The caller bounds the whole operation, including startup, and navigates once.
+        """
+        disk = disk_name(disk)
+        if disk not in REGISTRY:
+            raise DriverBlocked("该网盘不支持账号检查")
+        from playwright.async_api import async_playwright
+        profile = self.profile(disk)
+        channel = self.browser_for(disk)
+        state = self.state_dir / (disk + ".json")
+        with exclusive(self.state_dir / (disk + ".lock")):
+            # The entry itself can be cancelled while the Node driver starts.
+            # Cover __aenter__ with finally, otherwise its pipe transport leaks.
+            manager = async_playwright()
+            try:
+                pw = await manager.__aenter__()
+                browser = context = None
+                try:
+                    options = {"headless": self.headless}
+                    if channel != "chromium":
+                        options["channel"] = channel
+                    browser = await pw.chromium.launch(**options)
+                    context = await browser.new_context(
+                        storage_state=str(state) if state.exists() else None,
+                        accept_downloads=False, locale="zh-CN")
+                    context.set_default_timeout(1000)
+                    session_file = self.state_dir / "session-data" / f"{disk}-{channel}.json"
+                    if profile.get("session_storage") and session_file.exists():
+                        sessions = json.loads(session_file.read_text(encoding="utf-8"))
+                        data = {origin: entries for origin, entries in sessions.items()
+                                if self._session_origin(profile, origin) == origin and isinstance(entries, dict)}
+                        await context.add_init_script("""(() => {
+                            const entries = DATA[location.origin];
+                            if (entries && sessionStorage.length === 0) {
+                                for (const [key, value] of Object.entries(entries)) sessionStorage.setItem(key, value);
+                            }
+                        })();""".replace("DATA", json.dumps(data, ensure_ascii=True)))
+                    driver = REGISTRY[disk](profile=profile, notify=self.notify, cancel=self.cancel,
+                                            timeout=self.timeout, login_timeout=0, interactive=False)
+                    yield driver, await context.new_page()
+                finally:
+                    # Cleanup has its own small bound, including after task cancellation.
+                    for resource in (context, browser):
+                        if resource is not None:
+                            try:
+                                await asyncio.wait_for(resource.close(), timeout=3)
+                            except Exception:
+                                pass
+            finally:
+                try:
+                    await asyncio.wait_for(manager.__aexit__(None, None, None), timeout=5)
+                    await asyncio.sleep(.05)  # let Windows pipe close callbacks drain
+                except Exception:
+                    pass
+
+    async def check_login(self, disk, *, timeout=20, headed_retry=False):
+        from ..account_health import AccountHealth
+        return await AccountHealth(self).check_login(disk, timeout=timeout, headed_retry=headed_retry)
+
+    async def selfcheck(self, disk, *, timeout=20, headed_retry=False):
+        from ..account_health import AccountHealth
+        return await AccountHealth(self).selfcheck(disk, timeout=timeout, headed_retry=headed_retry)
+
+    async def capture_inspection_failure(self, disk, page):
+        """Explicit diagnostics opt-in only; never save an authentication state."""
+        if not self.diagnostics or disk not in REGISTRY:
+            return
+        dest = self.state_dir / "failures" / disk / ("check-" + uuid.uuid4().hex[:12])
+        try:
+            dest.mkdir(parents=True, exist_ok=False)
+            await page.screenshot(path=str(dest / "page.png"), timeout=5000)
+            content = await page.content()
+            if len(content.encode("utf-8")) <= 2 * 1024 * 1024:
+                (dest / "page.html").write_text(content, encoding="utf-8")
+            self.notify("已保存本次自检的私密页面快照（不自动导出）")
+        except Exception:
+            self.notify("自检失败快照未能保存，检查结果保留")
 
     @asynccontextmanager
     async def open(self, disk):

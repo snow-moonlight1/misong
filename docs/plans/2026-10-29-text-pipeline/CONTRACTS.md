@@ -1,6 +1,6 @@
 # S 公共契约 v1
 
-日期：2026-10-29。状态：A/B/C 已完成，S 已接通公共交付服务、CLI、桌面桥及发布检查点；GUI 层编辑及还原表单待 E。下文“约定”保留原接口归属，已实现范围以[集成说明](../../dev/text-delivery.md)为准。公共签名保持 v1，当前不新增协议研究或独立编解码。
+日期：2026-10-29；集成状态更新于 2026-10-30。A–H 已接线，包括 GUI 层编辑、还原表单与任务中心续跑。下文“约定”保留原接口归属，已实现范围以[集成说明](../../dev/text-delivery.md)及[发布验收](../../releases/0.2.0.md)为准。公共签名保持 v1，当前不新增协议研究或独立编解码。
 
 ## 基线与所有权
 
@@ -104,7 +104,7 @@ verify 可委托已实现的 `verify_saved_video(self, request, expected_text, c
 
 旧任务缺 text_delivery 时沿用旧语义，不追溯生成新方案。重启后的 running 视为可恢复中断，不视为 complete；缺密钥进入 blocked。独立方案逐份检查点，share_complete 后只重试文案，不能再次 upload/share。当前错误只记 error_code。最终文件及两种钥匙的清理保护按 04；敏感原文如现有显式分享文案交付需留存，沿用原有交付文件边界，不能复制进新的普通检查点。
 
-## S/E：桌面 API 和 CLI（约定，待集成）
+## S/E：桌面 API 和 CLI（已集成，保留接口约定）
 
 新 API 不复用或改变旧 `encode/decode/start_restore`：
 
@@ -131,4 +131,4 @@ S 接现有 `Api._start` 生命周期、事件队列和取消入口，不建立�
 
 ## S 集成交付（当前）
 
-已新增 `text_delivery.py`（S 所有）负责 encode→精确逆向自检→文字/视频交付→显式钥匙导出；`restore_to_file` 负责最终原文文件交付。`deliver_shared` 负责发布检查点、来源摘要绑定及逐方案恢复，不操作上传/分享。CLI/API 参数和实际示例以[接线说明](../../dev/text-delivery.md)为准。D 后续扩展须保留这些行为及 `tests/test_text_integration.py`，E 可直接接已实现的桥方法。桌面 GUI 未完成，不能将本次后端验收写成 05 的最终 UI 验收。
+`text_delivery.py` 负责 encode→精确逆向自检→文字/视频交付→显式钥匙导出；`restore_to_file` 负责最终原文文件交付。`deliver_shared` 负责发布检查点、来源摘要绑定及逐方案恢复，不操作上传/分享。D/E 的逐方案状态、编辑器、还原页及任务中心已接入；继续时只重新收集待完成方案的运行密钥和视频源。CLI/API 参数以[接线说明](../../dev/text-delivery.md)为准，后续扩展须保留集成测试及敏感字段边界。

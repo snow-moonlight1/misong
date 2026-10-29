@@ -84,7 +84,7 @@ class Fake:
         args = args or []
         api = self.api
         if method in ("bootstrap", "share_choices", "encode", "decode", "save_settings", "templates", "save_template", "delete_template",
-                      "reset_templates", "text_capabilities"):
+                      "reset_templates", "text_capabilities", "import_templates", "export_templates", "export_diagnostics"):
             if method == "save_settings":
                 self.requests.append((method, args))
                 return {"ok": True, "data": True}
@@ -138,9 +138,9 @@ class Fake:
             data = [{"path": p, **FILES.get(p, {"name": Path(p).name, "dir": False, "size": 1})} for p in args[0]]
         elif method == "folder_files":
             data = [r"D:\资源\S01E01.mkv"]
-        elif method in ("start_pipeline", "start_upload", "start_pack", "start_restore", "resume_task", "start_text_restore"):
+        elif method in ("start_pipeline", "start_upload", "start_pack", "start_restore", "resume_task", "start_text_restore", "check_accounts", "selfcheck"):
             kind = {"start_pipeline": "pipeline", "start_upload": "upload", "start_pack": "pack", "start_restore": "restore",
-                    "start_text_restore": "text-restore"}.get(method, "pipeline")
+                    "start_text_restore": "text-restore", "check_accounts": "account", "selfcheck": "account"}.get(method, "pipeline")
             # Requests are recorded for tests; they are in-memory only, never written.
             self.requests.append((method, args))
             self.job = {"id": "j1", "kind": kind, "title": "发布 纪录片合集", "step": "上传 夸克网盘：S01E01.part2.mp4（2/4）",
@@ -192,6 +192,7 @@ def main():
     ap.add_argument("--dark", action="store_true")
     ap.add_argument("--scale", type=float, default=1.0)
     ap.add_argument("--height", type=int, default=880)
+    ap.add_argument("--width", type=int, default=1320)
     ap.add_argument("--out", default=str(ROOT / "tmp" / "ui"))
     ap.add_argument("--only", default="")
     ns = ap.parse_args()
@@ -204,7 +205,7 @@ def main():
 
     with sync_playwright() as p:
         browser = p.chromium.launch(channel="msedge", headless=True)
-        ctx = browser.new_context(viewport={"width": 1320, "height": ns.height}, device_scale_factor=ns.scale,
+        ctx = browser.new_context(viewport={"width": ns.width, "height": ns.height}, device_scale_factor=ns.scale,
                                   color_scheme="dark" if ns.dark else "light", locale="zh-CN")
         page = ctx.new_page()
         page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
@@ -303,17 +304,18 @@ def main():
         assert page.locator("[data-model='raw_merge']").count() == 0
         assert page.locator(".page.active [data-ltype]").count() == 5
         page.check(".page.active [data-model='checksum']")
-        # Save every layer parameter, including the video path, without passwords.
+        # Public templates preserve parameters, never passwords/source paths.
         click(".page.active [data-tplsave]", 200)
         page.fill("#modal input[data-model='name']", "四类型模板")
         click("#modal [data-ok]", 300)
         saved = fake.api.templates()["data"][-1]
         assert [x.get("type", "archive") for x in saved["layers"]] == ["archive", "archive", "cover", "rename", "split"]
-        assert saved["layers"][2]["video"].endswith("intro.mp4")
+        assert saved["layers"][2]["video"] == ""
         assert "secret" not in json.dumps(saved)
         last_template = len(fake.api.templates()["data"]) - 1
         click(f".page.active [data-tpl='{last_template}']", 300)
-        assert page.locator(".page.active [data-dropkind='video']").inner_text().find("intro.mp4") >= 0
+        assert "intro.mp4" not in page.locator(".page.active [data-dropkind='video']").inner_text()
+        click(".page.active [data-dropkind='video']", 200)
         page.fill(".page.active [data-lpw]:not([disabled])", "secret")
         click(".page.active [data-stepnext]", 400)
         assert not modal_open(), "filled passwords need no confirm"
@@ -472,6 +474,28 @@ def main():
         page.wait_for_timeout(300)
         shot("16-accounts")
         shot("16b-accounts-bottom", 5000)
+        nav("settings")
+        shot("17-settings")
+        # Release-only task-center resume: public recipe metadata, no secrets.
+        fake.edits[r"D:\misong\runs\a"].update(
+            state="blocked", delivery={"label": "分享完成、文案未完成", "recipes": []},
+            resume_requirements={"recipes": [{"version": 1, "id": "r1", "name": "视频文案",
+                "layers": [{"id": "magic", "scheme": "mojibake", "version": 1,
+                            "params": {}, "secret_slot": "r1/magic"}],
+                "carrier": {"format_id": "framewords", "version": 1, "mode": "standard",
+                            "params": {}, "secret_slot": "r1/video"}}],
+                "legacy_key": False, "hop_password": False})
+        fake.live_state = ""
+        nav("tasks")
+        click("#tasksRefresh", 300)
+        page.locator(".task[data-task]").first.click()
+        page.wait_for_timeout(300)
+        page.evaluate("document.querySelector('#toasts').replaceChildren()")
+        shot("18-release-delivery-pending")
+        click("#taskDetail [data-resume]", 300)
+        assert page.locator("#modal [data-resume-secret]").count() == 2
+        shot("18b-release-resume-keys")
+        click("#modal [data-cancel]", 200)
         page.close()
         browser.close()
     assert not errors, "\n".join(errors)

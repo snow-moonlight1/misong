@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "misong"
-version = "0.2.0.dev0"
+version = "0.2.0"
 description = "Private backup and encrypted sharing toolbox for netdisks: nested encrypted archives, volume splitting, MP4 cover containers, share-text encoders and a desktop publishing GUI."
 readme = "README.md"
 license = { text = "GPL-3.0-or-later" }

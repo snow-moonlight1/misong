@@ -23,6 +23,7 @@ body:
         - 接收方还原（合卷、解包）
         - 网盘发布（上传、分享）
         - 链接文案编解码
+        - 文案还原 / .tkey / 帧语视频
         - 桌面应用界面
         - 其他
     validations:
@@ -38,6 +39,14 @@ body:
     attributes:
       label: 复现步骤与实际结果
       placeholder: 1. … 2. … 看到了什么错误提示？期望是什么？
+    validations:
+      required: true
+  - type: textarea
+    id: selfcheck
+    attributes:
+      label: 自检报告（已审阅脱敏）
+      description: "附上 misong doctor --json；网盘问题另附 misong selfcheck --disk <盘> 的逐项报告。无法运行时说明原因。不附会话、钥匙、原始截图或 HTML；诊断包须自行审阅后决定是否提供。"
+      render: text
     validations:
       required: true
   - type: textarea

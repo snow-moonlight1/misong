@@ -75,6 +75,7 @@ SETTING_KEYS = {"layers", "size", "disguise", "raw_merge", "body_disks", "form",
                 "expiry", "access", "schemes", "upload_schemes", "pack_split", "pack_size", "checksum", "video", "layers_version"}
 BROWSER_LABELS = {"chromium": "Chromium（内置，推荐）", "chrome": "Chrome", "msedge": "Edge"}
 ERROR_TYPES = {"DriverBlocked": "网盘页面操作受阻", "TimeoutError": "操作超时", "Error": "浏览器操作出错",
+               "AccountPreflightBlocked": "发布前账号检查未通过",
                "RuntimeError": "运行出错", "ValueError": "数据校验失败", "Paused": "已暂停",
                "CancelledError": "已暂停", "OSError": "文件读写失败"}
 NET_ERRORS = {"ERR_TIMED_OUT": "连接超时", "ERR_CONNECTION_TIMED_OUT": "连接超时", "ERR_NAME_NOT_RESOLVED": "域名解析失败",
@@ -215,6 +216,9 @@ class Api:
         if event_type == "log" and "text" in data:
             data["text"] = redact_text(str(data["text"]))
         self._events.put({"type": event_type, "ts": time.time(), **data})
+        if event_type == "job":
+            from ..eventlog import record_job
+            record_job(self._state, kind=data.get("job", {}).get("kind", ""), state=data.get("state", ""))
 
     def _notify(self, job):
         def notify(text):
@@ -342,7 +346,9 @@ class Api:
     # ---------- static data ----------
     @_safe
     def bootstrap(self):
+        from .. import __version__
         return {
+            "version": __version__,
             "formats": [{"key": k, "kind": f.kind, "password": f.supports_password, "ext": f.native_exts[0]}
                         for k, f in formats.FORMATS.items()],
             "providers": [{"key": k, "label": v["label"], "auto": k in PROFILES} for k, v in PROVIDERS.items()],
@@ -430,11 +436,13 @@ class Api:
         return self._load_templates()
 
     @_safe
-    def save_template(self, name, layers, disguise="", size="", replace=None):
+    def save_template(self, name, layers, disguise="", size="", replace=None, options=None, text_recipes=None):
         name = str(name or "").strip()
         if not name or len(name) > 24:
             raise ValueError("模板名称必须为 1–24 个字符")
-        specs = self._layers([{**x, "password": None} for x in layers or []])
+        specs = self._layers([{**x, "password": None,
+                               **({"video": "template.mp4"} if x.get("type") == "cover" else {})}
+                              for x in layers or []])
         clean = self._clean_layers(layers)
         for spec, raw in zip(specs, clean):
             if spec.type == "archive" and not formats.get(spec.fmt).supports_password:
@@ -449,6 +457,14 @@ class Api:
         if replace and name != old and any(t["name"] == name for t in items):
             raise ValueError(f"已有名为「{name}」的模板")
         index = next((i for i, t in enumerate(items) if t["name"] in (old, name)), None)
+        from ..templates import validate_template
+        previous = items[index] if index is not None else {}
+        for field, value in (("options", options), ("text_recipes", text_recipes)):
+            if value is not None:
+                item[field] = value
+            elif field in previous:
+                item[field] = previous[field]
+        item = {**validate_template(item, strict=False), "created": item["created"]}
         if index is None:
             if len(items) >= MAX_TEMPLATES:
                 raise ValueError(f"最多保存 {MAX_TEMPLATES} 个模板")
@@ -457,6 +473,37 @@ class Api:
             items[index] = item
             items = [t for i, t in enumerate(items) if i == index or t["name"] not in (old, name)]
         return self._save_templates(items)
+
+    @_safe
+    def export_templates(self, path):
+        from ..templates import export_file
+        return export_file(self._load_templates(), path)
+
+    @_safe
+    def import_templates(self, path):
+        from ..templates import import_file
+        if self._job is not None:
+            raise ValueError("请先暂停任务再导入模板")
+        result = import_file(path, self._load_templates())
+        self._save_templates(result["templates"])
+        return result
+
+    @_safe
+    def export_diagnostics(self, path, tasks=None, screenshots=None, log_lines=None):
+        from ..diagnostics import export_diagnostics
+        from ..eventlog import recent
+        folders = [self._managed(folder) for folder in tasks or []]
+        return export_diagnostics(path, tasks=folders, state_dir=self._state,
+                                  screenshots=screenshots or (), log_lines=[*recent(self._state), *(log_lines or ())])
+
+    @_safe
+    def pick_save_file(self, kind="diagnostics"):
+        import webview
+        if kind not in ("diagnostics", "templates"):
+            raise ValueError("保存类型无效")
+        name = ("misong-diagnostics.zip" if kind == "diagnostics" else "misong-templates.json")
+        chosen = self._window.create_file_dialog(webview.FileDialog.SAVE, save_filename=name)
+        return str(chosen[0]) if isinstance(chosen, (list, tuple)) and chosen else str(chosen or "")
 
     @_safe
     def delete_template(self, name):
@@ -767,6 +814,7 @@ class Api:
                 "schemes": plan.get("schemes", []), "share_options": plan.get("share_options", {}),
                 "stages": stages, "error": error_text(plan.get("error")),
                 "cleanup": cleanup.summary(plan),
+                "delivery": workflows.delivery_status(plan),
                 "settings": meta.get("settings") or self._derived_settings(plan, stages, kind)}
         return self._decorate(data, meta, path.parent)
 
@@ -891,6 +939,15 @@ class Api:
             plain = copy_dir / "share-plain.txt"
             data["plain"] = plain.read_text(encoding="utf-8").rstrip("\n") if plain.exists() else ""
             raw = json.loads(path.read_text(encoding="utf-8"))
+            from ..text_layers import DeliveryRecipe
+            complete = {r["recipe_id"] for r in raw.get("text_delivery", {}).get("recipes", [])
+                        if r.get("status") == "complete"}
+            pending = [DeliveryRecipe.from_dict(r).to_dict() for r in raw.get("text_recipes", [])
+                       if r.get("id") not in complete]
+            data["resume_requirements"] = {"recipes": pending,
+                "legacy_key": "mojibake" in raw.get("schemes", []),
+                "hop_password": raw.get("form") == "complex" and any(
+                    s["id"] == "hop" and not s.get("files") for s in raw.get("stages", []))}
             body = next((s for s in raw.get("stages", []) if s["id"] == "body"), {})
             data["files"] = [{"name": Path(r["path"]).name, "size": r["size"], "path": r["path"]} for r in body.get("files", [])]
             return data
@@ -1078,6 +1135,14 @@ class Api:
                 state = "none"
             else:
                 state = "tested" if verified else "loggedin"
+            try:
+                health = json.loads((self._state / "checks" / f"{disk}.json").read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                health = {}
+            if health.get("checked_at", "") >= info.get("session_at", ""):
+                state = {"logged_out": "expired", "network_error": "neterr", "verification_required": "verification",
+                         "unknown": "unknown", "timeout": "unknown", "error": "unknown",
+                         "logged_in": "tested" if verified else "loggedin"}.get(health.get("status"), state)
             result.append({"key": disk, "label": provider["label"], "auto": auto, "status": info["status"],
                            "state": state, "verified": verified, "verified_at": verified_at,
                            "session": session,
@@ -1086,6 +1151,42 @@ class Api:
                            "last_error": friendly_error(raw_error), "net_error": net_error,
                            "last_error_at": info.get("last_error_at", ""), "browser": browser})
         return result
+
+    def _record_health(self, report):
+        data = report.to_dict()
+        data["checked_at"] = datetime.now().isoformat(timespec="seconds")
+        if data["disk"] in PROFILES:
+            save_json(self._state / "checks" / (data["disk"] + ".json"), data)
+        return data
+
+    @_safe
+    def check_accounts(self, disk=None, browser=None):
+        from ..account_health import AccountHealth
+        if disk is not None and disk not in PROFILES:
+            raise ValueError("请选择支持的自动网盘")
+        def work(job):
+            health = AccountHealth(BrowserRuntime(state_dir=self._state, headless=True, cancel=self._cancel,
+                                                  browser_channel=browser or None, notify=self._notify(job)))
+            reports = asyncio.run(health.check_all([disk] if disk else None, timeout=45, headed_retry=True))
+            return {"checks": [self._record_health(r) for r in reports]}
+        return self._start("account", "检查登录" if disk else "检查全部登录", work)
+
+    @_safe
+    def selfcheck(self, disk, browser=None, diagnostics=False):
+        from ..account_health import AccountHealth
+        if disk not in PROFILES:
+            raise ValueError("请选择支持的自动网盘")
+        if type(diagnostics) is not bool:
+            raise ValueError("快照选项必须是明确的开关")
+        def work(job):
+            health = AccountHealth(BrowserRuntime(state_dir=self._state, headless=True, cancel=self._cancel,
+                                                  browser_channel=browser or None, diagnostics=diagnostics,
+                                                  notify=self._notify(job)))
+            report = asyncio.run(health.selfcheck(disk, timeout=45, headed_retry=True))
+            save_json(self._state / "selfchecks" / (disk + ".json"),
+                      {**report.to_dict(), "checked_at": datetime.now().isoformat(timespec="seconds")})
+            return {"selfcheck": report.to_dict()}
+        return self._start("account", "只读驱动自检", work)
 
     @_safe
     def account_action(self, disk, op, browser=None):

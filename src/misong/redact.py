@@ -23,10 +23,10 @@ __all__ = ["PLACEHOLDER", "redact_data", "redact_text"]
 _EXPLICIT_CODE_RE = re.compile(
     r"((?:提取码|访问码|取件码|提取密[码碼])\s*[：:=]?\s*)([A-Za-z0-9]{2,16})")
 _GENERIC_CODE_RE = re.compile(
-    r"((?:密[码碼]|password|passwd|pwd|passcode|api[_-]?key|secret|token|key)\s*[：:=]\s*)"
+    r"((?:魔曰密钥|密钥|口令|密[码碼]|password|passwd|pwd|passcode|api[_-]?key|secret|token|key)\s*[：:=]\s*)"
     r"([^\s<>\"'，。；、）)\[\]{}]+)", re.I)
 _QUOTED_SECRET_RE = re.compile(
-    r"((?:密[码碼]|password|passwd|pwd|passcode|api[_-]?key|secret|token|key)\s*[：:=]\s*)"
+    r"((?:魔曰密钥|密钥|口令|密[码碼]|password|passwd|pwd|passcode|api[_-]?key|secret|token|key)\s*[：:=]\s*)"
     r"([\"'])([^\r\n]*?)\2", re.I)
 _URL_RE = re.compile(r"https?://[^\s<>\"'，。；、）)]+", re.I)
 # 百分号编码形态的 URL（常见于日志里的 redirect/嵌套引用）：冒号必须是 %3a，
@@ -41,15 +41,20 @@ _COOKIE_HEADER_RE = re.compile(r"(?i)\b((?:set-)?cookie)(\s*:\s*)[^\r\n]*")
 _TOKEN_KV_RE = re.compile(
     r"(?i)\b(api[_-]?key|access[_-]?key|private[_-]?key|access[_-]?token|refresh[_-]?token"
     r"|secret|token|session[_-]?id|key)(\s*[=:]\s*)([A-Za-z0-9._~+/=-]{8,})")
+_SESSION_KV_RE = re.compile(r"(?i)\b(sid|sessid|sessionid)(\s*[=:]\s*)([^\s;,&\"'<>\[\]{}]+)")
+_CHINESE_SECRET_RE = re.compile(r"((?:魔曰密钥|密钥|魔咒|口令|密[码碼])(?:\s*(?:是|[：:=])\s*|\s+))([^\s<>\"'，。；、）)\[\]{}]+)")
+_CHINESE_QUOTED_RE = re.compile(r'''((?:魔曰密钥|密钥|魔咒|口令|密[码碼])\s*(?:(?:是|[：:=])\s*)?)(["'])([^\r\n]*?)\2''')
 _WIN_USER_RE = re.compile(r"(?i)\b([A-Z]:[\\/]+Users[\\/]+)([^\\/\"'\s，。；、）)]+)")
 _POSIX_USER_RE = re.compile(r"(?<![\w.\-])(/(?:home|Users)/)([^/\"'\s，。；、）)]+)")
+_QUOTED_PATH_RE = re.compile(r'''(["'])([A-Za-z]:[\\/][^"'\r\n]*|/(?:mnt|media|Volumes|data)/[^"'\r\n]*)\1''')
+_OTHER_PATH_RE = re.compile(r"(?i)\b[A-Z]:[\\/](?!Users[\\/])[^\s\"'<>，。；、）)\[\]{}]+|(?<![\w:/\]])/(?:mnt|media|Volumes|data)/[^\s\"'<>，。；、）)\[\]{}]+")
 
 _SCHEME_WORDS = {"http", "https"}
 # 敏感查询参数与敏感 JSON 键的识别标记（子串匹配，宁可多脱）。
 _PARAM_MARKS = ("pwd", "password", "passwd", "passcode", "token", "secret", "surl",
                 "sign", "auth", "key", "code")
 _KEY_MARKS = ("password", "passwd", "pwd", "passcode", "secret", "token", "cookie",
-              "authorization", "credential", "auth", "key")
+              "authorization", "credential", "auth", "key", "密码", "密钥", "口令")
 
 
 def _is_provider_host(host: str) -> bool:
@@ -101,9 +106,10 @@ def _redact_url(url: str) -> str:
     if "@" in netloc:  # userinfo 凭据
         netloc = PLACEHOLDER + "@" + netloc.rpartition("@")[2]
     path = parts.path
-    if _is_provider_host(host):
+    if _is_provider_host(host) or re.match(r"^/(?:s|f|share|123pan)/", path):
         path = _PROVIDER_PATH_RE.sub(
             lambda m: m.group(1) + PLACEHOLDER + m.group(2), path)
+        path = re.sub(r"^(/share/)[^/]+(/?)$", lambda m: m[1] + PLACEHOLDER + m[2], path)
     query = _redact_query(parts.query) if parts.query else ""
     fragment = _redact_fragment(parts.fragment) if parts.fragment else ""
     try:
@@ -126,6 +132,11 @@ def _redact_plain(text: str) -> str:
     text = _QUOTED_SECRET_RE.sub(lambda m: m[1] + m[2] + PLACEHOLDER + m[2], text)
     text = _GENERIC_CODE_RE.sub(_redact_code_value, text)
     text = _TOKEN_KV_RE.sub(lambda m: m.group(1) + m.group(2) + PLACEHOLDER, text)
+    text = _SESSION_KV_RE.sub(lambda m: m.group(1) + m.group(2) + PLACEHOLDER, text)
+    text = _CHINESE_QUOTED_RE.sub(lambda m: m[1] + m[2] + PLACEHOLDER + m[2], text)
+    text = _CHINESE_SECRET_RE.sub(_redact_code_value, text)
+    text = _QUOTED_PATH_RE.sub(lambda m: m[1] + PLACEHOLDER + m[1] if not re.match(r"(?i)[a-z]:[\\/]Users[\\/]", m[2]) else m[0], text)
+    text = _OTHER_PATH_RE.sub(PLACEHOLDER, text)
     text = _WIN_USER_RE.sub(lambda m: m.group(1) + PLACEHOLDER, text)
     text = _POSIX_USER_RE.sub(lambda m: m.group(1) + PLACEHOLDER, text)
     return text
@@ -145,6 +156,8 @@ def _sensitive_key(key) -> bool:
     if not isinstance(key, str):
         return False
     name = key.lower()
+    if name in ("sid", "sessid", "sessionid"):
+        return True
     if name == "code" or name.endswith(("_code", "-code")):  # ShareInfo.code 等提取码字段
         return True
     return any(mark in name for mark in _KEY_MARKS)

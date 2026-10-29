@@ -124,9 +124,10 @@ $layers = '[{"type":"archive","fmt":"zip"},{"type":"cover","video":"C:/media/int
 - [使用指南](docs/user-guide.md)：桌面应用、发布、中转、续跑与回填
 - [接收方指南](docs/receiver-guide.md)：解码文案、下载与还原
 - [支持情况与验证状态](docs/status.md)：各网盘验收范围、已知限制、待验证项
-- [路线图](docs/roadmap.md)：已发布 v0.1.0，当前开发 0.2.0.dev0；文案层、`.tkey` 与帧语官网 RPA 已完成后端集成，GUI 层编辑待接
+- [路线图](docs/roadmap.md)：源码已准备为 0.2.0；有序文案、钥匙、帧语官网 RPA、账号自检、诊断和模板入口已集成，发布验证见[验收记录](docs/releases/0.2.0.md)
 - [v0.2 文案与视频执行计划](docs/plans/2026-10-29-text-pipeline/README.md)：当前 RPA 分阶段任务，以及保留供后续使用的两份净室提示词
 - [开发指南](docs/dev/development.md)：环境、结构、测试、驱动约定
+- [智能体 Skill](skills/misong/SKILL.md)：命令使用、已有授权与凭据边界
 - 调研资料：[网盘 RPA 现场机制](docs/dev/rpa-research.md)、[加密/中转套路调研](docs/dev/tactics.md)
 - [更新记录](CHANGELOG.md) · [参与贡献](CONTRIBUTING.md) · [安全策略](SECURITY.md)
 

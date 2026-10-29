@@ -548,3 +548,13 @@ textarea.input { height: auto; padding: 8px 11px; resize: vertical; line-height:
 .key-export { padding-top: 8px; border-top: 1px dashed var(--border-strong); line-height: 1.5; }
 [data-mount="schemes"] > .seg, [data-mount="textrestore"] > .seg { margin-bottom: 12px; flex-wrap: wrap; }
 @media (max-width: 760px) { .recipe-head { flex-wrap: wrap; } .recipe .grid2 { grid-template-columns: 1fr; } .tlayer .input { width: 100%; } }
+
+/* Imported slot names and output paths must wrap in narrow windows. */
+#settingsResult, .modal-box .field > span { overflow-wrap: anywhere; }
+@media (max-width: 1180px) {
+  .tasks { grid-template-columns: 260px minmax(0, 1fr); gap: 16px; }
+  .detail-head { flex-direction: column; }
+  .detail-head .btn-row { max-width: 100%; justify-content: flex-start; }
+  .detail-head .detail-title { width: 100%; }
+}
+@media (max-width: 900px) { .tasks { grid-template-columns: minmax(0, 1fr); } }

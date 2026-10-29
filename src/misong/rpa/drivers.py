@@ -4,6 +4,8 @@ from __future__ import annotations
 import asyncio
 import re
 import time
+import math
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -19,6 +21,57 @@ class DriverBlocked(RuntimeError):
 class AccountActionRequired(Paused):
     """Account setup must be completed by its owner in the provider's UI."""
     pass
+
+
+@dataclass(frozen=True)
+class LoginCheck:
+    """Secret-free observation, never an authentication snapshot."""
+    status: str
+    code: str
+
+    def to_dict(self):
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class SelectorCheck:
+    item: str
+    status: str
+
+
+@dataclass(frozen=True)
+class SelectorReport:
+    status: str
+    items: tuple[SelectorCheck, ...] = ()
+
+    def to_dict(self):
+        return asdict(self)
+
+
+class CheckCancelled(Exception):
+    """A check was cancelled by the owner, without changing task checkpoints."""
+
+
+async def bounded_check(operation, *, timeout, cancel=None):
+    """Bound even browser startup/navigation and poll a threading.Event cancellation."""
+    task = asyncio.ensure_future(operation)
+    try:
+        if not math.isfinite(timeout) or timeout <= 0:
+            raise ValueError("检查超时必须是正的有限秒数")
+        end = time.monotonic() + timeout
+        while True:
+            if cancel is not None and cancel.is_set():
+                raise CheckCancelled
+            remaining = end - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError
+            done, _ = await asyncio.wait({task}, timeout=min(.05, remaining))
+            if done:
+                return task.result()
+    finally:
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
 
 
 PROFILES = {
@@ -109,6 +162,7 @@ PROFILES = {
         "upload": "input[type=file][name=html5uploader]",
         "checkbox": ".wp-s-pan-table__body-row--checkbox-block",
         "share_dialog": '[role=dialog][aria-label^="分享文件(夹):"]',
+        "share_trigger": "button.wp-s-agile-tool-bar__h-action-button:text-is('分享')",
         "expire": "平台默认（以分享弹窗为准）",
     },
 }
@@ -117,6 +171,22 @@ PROFILES = {
 class DiskDriver:
     name = "base"
     status = "probe"
+
+    async def check_login(self, page, *, timeout=10):
+        return LoginCheck("unsupported", "unsupported")
+
+    async def selfcheck(self, page, *, timeout=10):
+        return SelectorReport("unsupported")
+
+    async def check_share(self, url, code=None):
+        """Future link-health capability; no provider is advertised by default."""
+        return LoginCheck("unsupported", "unsupported")
+
+    async def canary_selfcheck(self, page, *, allow_remote_writes=False):
+        """Separate opt-in extension; no default upload/share/delete implementation."""
+        if not allow_remote_writes:
+            raise ValueError("金丝雀会写入远端，必须由用户明确启用")
+        return SelectorReport("unsupported")
 
     async def ensure_login(self, context):
         raise NotImplementedError
@@ -215,6 +285,158 @@ class BrowserDiskDriver(DiskDriver):
         if self.profile.get("logged_in_text"):
             return bool(await self._visible(page.get_by_text(re.compile(self.profile["logged_in_text"], re.I))))
         return True
+
+    async def _health_visible(self, locator):
+        # Avoid treating hidden/offscreen risk-control templates as active challenges.
+        for item in await locator.all():
+            if await item.is_visible() and await item.evaluate("""el => {
+                const r=el.getBoundingClientRect();
+                return r.bottom>0 && r.right>0 && r.top<innerHeight && r.left<innerWidth
+                    && getComputedStyle(el).opacity!=='0';
+            }"""):
+                return item
+        return None
+
+    async def _login_observation(self, page):
+        url = urlsplit(page.url)
+        entry = urlsplit(self.profile["url"])
+        hosts = {str(h).lower().removeprefix("www.")
+                 for h in [entry.hostname, *self.profile.get("hosts", [])] if h}
+        host = (url.hostname or "").lower().removeprefix("www.")
+        if (self.name == "baidu" and host == "passport.baidu.com" and url.scheme == "https"
+                and not url.username and not url.password and url.port in (None, 443)):
+            first_party = True
+            login_redirect = True
+        else:
+            first_party = (host in hosts and url.scheme == entry.scheme and url.port == entry.port
+                           and not url.username and not url.password)
+            login_redirect = bool(re.search(r"/(?:login|signin)(?:/|$)", url.path, re.I))
+        if not first_party:
+            return LoginCheck("unknown", "unexpected_origin")
+        challenge = page.get_by_text(re.compile(
+            r"安全验证|请完成.{0,12}验证|请.{0,8}验证身份|拖动.{0,8}滑块|请绑定手机|绑定手机号码|"
+            r"账号.{0,8}(?:封禁|冻结)|访问过于频繁|操作频繁|异常访问"))
+        if await self._health_visible(challenge):
+            return LoginCheck("verification_required", "owner_action_required")
+        for key in ("account_prompt", "verification_selector"):
+            if self.profile.get(key):
+                loc = (page.locator(self.profile[key]) if key.endswith("selector")
+                       else page.get_by_text(self.profile[key], exact=True))
+                if await self._health_visible(loc):
+                    return LoginCheck("verification_required", "owner_action_required")
+        challenge_frame = page.locator(
+            "iframe[src*='captcha'], iframe[src*='verify'], [role=dialog] input[autocomplete=one-time-code]")
+        if await self._health_visible(challenge_frame):
+            return LoginCheck("verification_required", "owner_action_required")
+        if await self._health_visible(page.get_by_text(re.compile(
+                r"网络异常|网络连接失败|网络错误|无法连接服务器|加载失败.*重试"))):
+            return LoginCheck("network_error", "page_network_error")
+        invalid = self.profile.get("session_invalid")
+        if invalid and await self._health_visible(page.get_by_text(invalid, exact=True)):
+            return LoginCheck("logged_out", "session_expired")
+        prompt = await self._health_visible(page.get_by_text(re.compile(
+                r"^(?:登录|去登录|立即登录|请先登录|扫码登录|二维码登录|账号登录|帐号登录|密码登录|短信登录|登录已失效|登录已过期|请重新登录)$")))
+        if self.profile.get("logged_out"):
+            prompt = prompt or await self._health_visible(page.locator(self.profile["logged_out"]))
+        if login_redirect:
+            return LoginCheck("logged_out", "login_required")
+        authenticated = await self.is_logged_in(page)
+        if authenticated and prompt:
+            return LoginCheck("unknown", "conflicting_login_signals")
+        if authenticated:
+            return LoginCheck("logged_in", "authenticated_marker")
+        if prompt:
+            return LoginCheck("logged_out", "login_required")
+        return None
+
+    async def check_login(self, page, *, timeout=10):
+        async def observe():
+            while True:
+                result = await self._login_observation(page)
+                if result is not None:
+                    return result
+                await asyncio.sleep(.1)
+        try:
+            return await bounded_check(observe(), timeout=timeout, cancel=self.cancel)
+        except CheckCancelled:
+            return LoginCheck("cancelled", "cancelled")
+        except TimeoutError:
+            # Missing auth markers can mean a changed SPA or a stalled request, not expiry.
+            return LoginCheck("timeout", "login_markers_missing")
+
+    def selfcheck_selectors(self):
+        """Profile-backed passive manifest. Conditional controls may not be rendered yet."""
+        p = self.profile
+        items = [("upload", "css", p.get("upload"), False, True, None)]
+        for key in ("upload_menu", "upload_trigger", "upload_button", "new_folder_menu"):
+            if p.get(key):
+                items.append((key, "css" if key == "upload_trigger" else "text", p[key],
+                              key == "upload_button" and bool(p.get("upload_menu")), False, None))
+        items.append(("new_folder", "text", p.get("new_folder"), bool(p.get("new_folder_menu")),
+                      False, p.get("toolbar") if self.name == "baidu" else None))
+        items.append(("share", "css" if p.get("share_trigger") else "text",
+                      p.get("share_trigger", p.get("share", "分享")), True, False, p.get("share_scope")))
+        if p.get("share_more"):
+            items.append(("share_more", "text", p["share_more"], True, False, p.get("share_scope")))
+        return items
+
+    async def selfcheck(self, page, *, timeout=10):
+        results = []
+        current = None
+        async def inspect():
+            nonlocal current
+            from playwright.async_api import Error as PlaywrightError
+            for key, kind, selector, conditional, attached, scope in self.selfcheck_selectors():
+                current = key
+                try:
+                    if not selector:
+                        results.append(SelectorCheck(key, "not_configured"))
+                        current = None
+                        continue
+                    root = page.locator(scope) if scope else page
+                    locator = root.locator(selector) if kind == "css" else root.get_by_text(selector, exact=True)
+                    if not await locator.count():
+                        status = "not_observed" if conditional else "missing"
+                    elif attached:
+                        status = "passed"  # File inputs are legitimately hidden; never set their files.
+                    else:
+                        visible = []
+                        for candidate in await locator.all():
+                            if await self._health_visible(candidate):
+                                visible.append(candidate)
+                        element = visible[0] if visible else None
+                        if element is None:
+                            status = "not_observed" if conditional else "hidden"
+                        elif kind == "text" and len(visible) > 1:
+                            status = "ambiguous"
+                        elif not await element.is_enabled():
+                            status = "not_observed" if conditional else "disabled"
+                        elif not await element.evaluate("""el => {
+                            const r=el.getBoundingClientRect();
+                            const hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);
+                            return hit===el || el.contains(hit);
+                        }"""):
+                            status = "covered"
+                        else:
+                            status = "passed"
+                except PlaywrightError:
+                    # Do not return Playwright errors: they can contain URLs/DOM/credentials.
+                    status = "selector_error"
+                results.append(SelectorCheck(key, status))
+                current = None
+        try:
+            await bounded_check(inspect(), timeout=timeout, cancel=self.cancel)
+        except CheckCancelled:
+            if current:
+                results.append(SelectorCheck(current, "cancelled"))
+            return SelectorReport("cancelled", tuple(results))
+        except TimeoutError:
+            if current:
+                results.append(SelectorCheck(current, "timeout"))
+            return SelectorReport("timeout", tuple(results))
+        failed = any(r.status not in ("passed", "not_observed") for r in results)
+        status = "failed" if failed else "incomplete" if any(r.status == "not_observed" for r in results) else "passed"
+        return SelectorReport(status, tuple(results))
 
     def rows(self, page, name):
         # Exact filename text, scoped to file rows, not the global transfer queue.
@@ -1047,8 +1269,7 @@ class BaiduDriver(BrowserDiskDriver):
         if row is None:
             raise DriverBlocked("未找到当前任务目录；拒绝分享不确定的文件")
         await row.locator(self.profile["checkbox"]).first.click()
-        share_button = page.locator("button.wp-s-agile-tool-bar__h-action-button").filter(
-            has_text=re.compile(r"^\s*分享\s*$"))
+        share_button = page.locator(self.profile.get("share_trigger", PROFILES["baidu"]["share_trigger"]))
         try:
             await self._wait_clickable(share_button, "分享", timeout=min(15, self.timeout))
         except DriverBlocked:

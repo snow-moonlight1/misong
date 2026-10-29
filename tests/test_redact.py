@@ -84,7 +84,19 @@ def test_user_paths_are_redacted(src, want):
 
 def test_non_user_paths_stay():
     text = "/var/log/misong.log D:\\data\\syn.mp4"
-    assert redact_text(text) == text
+    assert redact_text(text) == "/var/log/misong.log " + P
+
+
+@pytest.mark.parametrize("text,private", [
+    ("魔曰密钥：syn-value", "syn-value"), ("口令='合成 私密 口令'", "合成 私密 口令"),
+    ("sid=syn1; ok=yes", "syn1"), ('path="D:\\Private Folder\\synuser\\a.txt"', "synuser"),
+    ("/mnt/private/synuser/file.txt", "synuser"),
+    ("魔咒：syn-magic", "syn-magic"), ("密码 是 syn-value", "syn-value"),
+    ("魔曰密钥 syn-key", "syn-key"), ("https://example.invalid/share/synId", "synId"),
+])
+def test_extended_secret_labels_and_custom_paths(text, private):
+    assert private not in redact_text(text)
+    assert P in redact_text(text)
 
 
 def test_cookie_and_authorization_headers():
