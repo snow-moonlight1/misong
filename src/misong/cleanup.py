@@ -6,6 +6,19 @@ from pathlib import Path
 
 from .jobs import fingerprint
 
+# Delivery credentials are never cleanup candidates, even if registered by mistake.
+PROTECTED_SUFFIXES = (".mskey", ".tkey")
+
+
+def text_delivery_pending(plan: dict) -> bool:
+    """True while any step-4 recipe is not complete; cleanup must wait for all of them."""
+    if "text_recipes" not in plan:
+        return False
+    state = plan.get("text_delivery") or {}
+    records = {r.get("recipe_id"): r.get("status") for r in state.get("recipes", [])}
+    ids = [r.get("id") for r in plan.get("text_recipes") or []]
+    return not ids or any(records.get(i) != "complete" for i in ids)
+
 
 def inventory(root: Path, sources: list[Path], files: list[dict], enabled: bool) -> dict:
     return {"enabled": bool(enabled), "root": str(root.resolve()),
@@ -50,6 +63,8 @@ def _safe_path(root: Path, item: dict, sources: list[Path]) -> Path:
     relative = path.relative_to(root)
     if not relative.parts or ".." in relative.parts:
         raise ValueError("outside_task")
+    if path.suffix.lower() in PROTECTED_SUFFIXES:
+        raise ValueError("protected_key")
     if not (len(relative.parts) == 2 and relative.parts[0] == "body" or
             len(relative.parts) == 1 and relative.name in ("guide.txt", "guide.7z")):
         raise ValueError("not_generated_payload")
@@ -87,6 +102,11 @@ def remove_generated(plan_path: Path, plan: dict, checkpoint, notify=print) -> N
         cleanup["state"] = "retained"
         checkpoint()
         notify("未自动清理：尚未确认所有文件上传并分享成功；本地产物保留")
+        return
+    if text_delivery_pending(plan):
+        cleanup["state"] = "retained"
+        checkpoint()
+        notify("未自动清理：文案交付方案尚未全部完成；本地产物保留")
         return
     root = plan_path.parent.resolve()
     if cleanup.get("root") != str(root):

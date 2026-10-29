@@ -3,7 +3,7 @@
 The full pipeline stays in publish.prepare/publish. These helpers let each block
 (encrypt-pack, upload-share) run on its own while reusing pack/merge/split and the
 same v2 relay-plan checkpoints, so standalone uploads resume exactly like pipeline jobs.
-Passwords are never written to disk here.
+Passwords enter a portable key only when its export is explicitly requested.
 """
 from __future__ import annotations
 
@@ -84,7 +84,8 @@ def _fresh_dir(out_dir: Path, inputs: list[Path]) -> Path:
 
 
 def pack_only(inputs, layers: list[pack.LayerSpec], out_dir: Path, *, size: str = "", disguise: str = "",
-              video: Path | None = None, raw_merge: bool = False, checksum: bool = False, notify=print) -> dict:
+              video: Path | None = None, raw_merge: bool = False, checksum: bool = False,
+              export_key: bool = False, notify=print) -> dict:
     """Encrypt-pack (optionally merge into a cover video and split) without any upload plan."""
     inputs = [Path(p).resolve(strict=True) for p in inputs]
     if not inputs:
@@ -102,7 +103,7 @@ def pack_only(inputs, layers: list[pack.LayerSpec], out_dir: Path, *, size: str 
     base = inputs[0].stem if len(inputs) == 1 and inputs[0].is_file() else (inputs[0].name if len(inputs) == 1 else "bundle")
     artifact = target / (base + output_ext(layers))
     notify("打包：正在按层生成最终产物")
-    manifest = pack.pack(inputs, layers, artifact)
+    manifest = pack.pack(inputs, layers, artifact, export_key=export_key)
     for record in reversed(manifest["layers"]):
         if record["type"] != "split":
             continue
@@ -118,11 +119,16 @@ def pack_only(inputs, layers: list[pack.LayerSpec], out_dir: Path, *, size: str 
     chain = ",".join(x.fmt if x.type == "archive" else x.type for x in reversed(layers))
     first = outputs[0]
     write_restore(target, first, manifest)
+    key_file = ""
+    if export_key:
+        from .restore_key import sidecar
+        key_file = str(sidecar(artifact))
+        notify("还原钥匙：已导出 .mskey，请与产物一起交付给接收方")
     write_meta(target, "pack", title_for(inputs), chain=chain, artifact=str(first),
                artifacts=[str(p) for p in outputs])
     notify(f"完成：{target}")
     return {"out": str(target), "artifact": str(first), "chain": chain,
-            "files": [_file_info(p) for p in outputs], "parts": []}
+            "files": [_file_info(p) for p in outputs], "parts": [], "restore_key": key_file}
 
 
 def write_checksums(files, path):
@@ -141,6 +147,7 @@ def write_restore(target, first, manifest):
     chain = ",".join(r.get("format", r["type"]) for r in manifest["layers"])
     Path(target, "RESTORE.txt").write_text(
         "【还原说明 · 本地保留】\n下载全部最终产物/分卷到同一目录。\n"
+        '有还原钥匙：misong restore "下载目录" --key-file "资源.mskey" -o restored\n'
         f'有清单：misong unest "{first.name}" -o restored -P="外层到内层密码链"\n'
         f'无清单：misong unwrap "{first.name}" -o restored --chain-pwd="归档层外到内密码链"\n'
         "unest 每层对齐，cover/split/rename 用 - 占位；unwrap 只对齐归档层。\n"
@@ -192,3 +199,35 @@ def prepare_upload(files, out_dir: Path, body_disks, share_options: ShareOptions
     write_meta(target, "upload", title or title_for(files), folder_name=folder_name)
     notify(f"已准备：{len(files)} 个文件 → {len(disks)} 个网盘")
     return path
+
+
+TEXT_STATES = ("pending", "running", "complete", "blocked", "cancelled")
+
+
+def delivery_status(plan: dict) -> dict:
+    """Public, secret-free step-4 status distinguishing "shared" from "fully delivered".
+
+    Legacy plans (old ``schemes``) have no per-recipe records: a complete legacy plan
+    is fully delivered, otherwise share completion follows the upload stages.
+    """
+    stages = plan.get("stages") or []
+    shared = bool(stages) and all(s.get("share") for s in stages)
+    if "text_recipes" not in plan:
+        done = plan.get("state") == "complete"
+        return {"mode": "legacy", "share_complete": shared or done, "delivery_complete": done,
+                "recipes": [], "label": "全部交付完成" if done else ("网盘已分享" if shared else "未分享")}
+    state = plan.get("text_delivery") or {}
+    records = {r.get("recipe_id"): r for r in state.get("recipes", [])}
+    recipes = []
+    for item in plan.get("text_recipes") or []:
+        rec = records.get(item.get("id"), {})
+        status = rec.get("status", "pending")
+        recipes.append({"recipe_id": item.get("id"), "name": item.get("name", ""),
+                        "status": status if status in TEXT_STATES else "blocked",
+                        "error_code": rec.get("error_code"),
+                        "files": [{"role": a.get("role"), "path": a.get("path")} for a in rec.get("artifacts", [])]})
+    shared = shared or bool(state.get("share_complete"))
+    done = shared and bool(recipes) and all(r["status"] == "complete" for r in recipes)
+    label = ("全部交付完成" if done else "分享完成、文案未完成" if shared else "未分享")
+    return {"mode": "recipes", "share_complete": shared, "delivery_complete": done,
+            "recipes": recipes, "label": label}
