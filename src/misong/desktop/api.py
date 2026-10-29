@@ -1,7 +1,7 @@
 """Bridge between the desktop web UI and the existing Python workflows.
 
 pywebview exposes every public method to JavaScript, so internal state uses underscore
-names. Passwords and the mojibake key stay in memory for one job and are never saved.
+names. Only an explicitly exported .mskey may persist packing passwords.
 """
 from __future__ import annotations
 
@@ -22,6 +22,8 @@ from .. import cleanup, formats, pack, workflows, preflight
 from ..layers import migrate, validate
 from ..jobs import save_json
 from ..metadata import MANIFEST_EXTS
+from ..paths import resolve_paths
+from ..redact import redact_text
 from ..providers import PROVIDERS
 from ..publish import Paused, PublishOptions, import_share, prepare, publish
 from ..rpa.drivers import PROFILES
@@ -64,7 +66,7 @@ def _clipboard_text():
         user.CloseClipboard()
 from ..sharing import COPY_SCHEMES, encode_copy
 
-RUNS = ROOT / "runs"
+RUNS = resolve_paths().runs
 SCHEME_LABELS = {"beast": "兽曰", "mojibake": "魔曰", "hajimi": "哈基米", "base64": "Base64",
                  "base64url": "Base64URL", "base32": "Base32", "base85": "Base85", "hex": "Hex",
                  "url": "URL 编码", "reverse": "倒序", "rot13": "ROT13"}
@@ -98,6 +100,21 @@ def _safe(fn):
             return {"ok": True, "data": fn(self, *args, **kwargs)}
         except (Exception, SystemExit) as e:  # surfaced to the UI as a readable message
             return {"ok": False, "error": str(e) or type(e).__name__}
+    return wrapper
+
+
+def _text_safe(fn):
+    """New text requests may contain secrets; never surface arbitrary errors."""
+    @functools.wraps(fn)
+    def wrapper(self, *args, **kwargs):
+        from ..text_contracts import ErrorCode, TextOperationError
+        try:
+            return {"ok": True, "data": fn(self, *args, **kwargs)}
+        except TextOperationError as error:
+            code = error.code.value
+        except Exception:
+            code = ErrorCode.INVALID_RECIPE.value
+        return {"ok": False, "error": "文案操作未完成：" + code, "error_code": code}
     return wrapper
 
 
@@ -164,9 +181,10 @@ def installed_browsers() -> dict:
 
 
 class Api:
-    def __init__(self, runs_dir: Path = RUNS, state_dir: Path = DEFAULT_STATE, runtime_factory=None):
-        self._state = Path(state_dir)
-        self._default_runs = Path(runs_dir).resolve()
+    def __init__(self, runs_dir: Path | None = None, state_dir: Path | None = None, runtime_factory=None):
+        paths = resolve_paths()
+        self._state = Path(state_dir) if state_dir is not None else paths.state
+        self._default_runs = (Path(runs_dir) if runs_dir is not None else paths.runs).resolve()
         settings = self._load_settings()
         selected = settings.get("output_dir")
         self._runs = Path(selected).resolve() if isinstance(selected, str) and selected else self._default_runs
@@ -194,11 +212,13 @@ class Api:
         return False
 
     def _emit(self, event_type, /, **data):
+        if event_type == "log" and "text" in data:
+            data["text"] = redact_text(str(data["text"]))
         self._events.put({"type": event_type, "ts": time.time(), **data})
 
     def _notify(self, job):
         def notify(text):
-            job["step"] = str(text)
+            job["step"] = redact_text(str(text))
             self._emit("log", text=str(text), kind=job["kind"])
         return notify
 
@@ -556,8 +576,14 @@ class Api:
         hop_password = cfg.get("hop_password") or None
         if form == "complex" and not hop_password:
             raise ValueError("加密中转需要填写第一跳压缩包密码")
+        recipes = None
+        if cfg.get("recipes") is not None:
+            from ..text_delivery import parse_recipes
+            if cfg.get("schemes"):
+                raise ValueError("新文案方案与旧 schemes 不能同时指定")
+            recipes = tuple(r.to_dict() for r in parse_recipes(cfg["recipes"]))
         schemes = tuple(cfg.get("schemes") or ())
-        if not schemes:
+        if not schemes and recipes is None:
             raise ValueError("请至少选择一种链接文案")
         output = self._new_dir("publish")
         checked = preflight.estimate(inputs, layers, output)
@@ -568,7 +594,9 @@ class Api:
                                  pwd_hint=cfg.get("pwd_hint") or "请向分享者获取解压密码。", schemes=schemes,
                                  share_options=share, body_disks=disks, checksum=bool(cfg.get("checksum")),
                                  task_name=task_name, folder_name=folder_name,
-                                 cleanup_after_upload=bool(cfg.get("cleanup_after_upload")))
+                                 cleanup_after_upload=bool(cfg.get("cleanup_after_upload")),
+                                 restore_key_location=cfg.get("restore_key_location") or "none",
+                                 text_recipes=recipes)
         upload = bool(cfg.get("upload", True))
         key = cfg.get("key") or "ABRACADABRA"
         title = task_name or workflows.title_for(inputs)
@@ -580,8 +608,16 @@ class Api:
             job["plan"] = str(path)
             if not upload:
                 return {"plan": str(path), "task": self._summary(path)}
-            result = asyncio.run(publish(path, runtime=self._runtime(notify), notify=notify, cancel=self._cancel,
-                                         key=key, hop_password=hop_password))
+            from ..text_contracts import OperationContext, RuntimeSecrets
+            secrets = RuntimeSecrets(cfg.get("text_secrets", {}))
+            try:
+                result = asyncio.run(publish(path, runtime=self._runtime(notify), notify=notify, cancel=self._cancel,
+                                             key=key, hop_password=hop_password,
+                                             text_context=OperationContext(secrets, self._cancel),
+                                             text_video_sources=cfg.get("text_video_sources"),
+                                             export_text_keys=cfg.get("export_text_keys", [])))
+            finally:
+                secrets.clear()
             return {"plan": str(path), "copies": result["copies"], "task": self._summary(path)}
         return self._start("pipeline", title, work)
 
@@ -599,10 +635,34 @@ class Api:
 
         def work(job):
             result = workflows.pack_only(inputs, layers, out, checksum=bool(cfg.get("checksum")),
+                                         export_key=bool(cfg.get("export_key")),
                                          notify=self._notify(job))
             workflows.update_meta(Path(result["out"]), settings=self._snapshot(cfg, "pack"))
             return result
         return self._start("pack", workflows.title_for(inputs), work)
+
+    @_safe
+    def start_restore(self, cfg):
+        from ..restore import restore
+        if not cfg.get("source"):
+            raise ValueError("请先添加压缩包、分卷或下载文件夹")
+        source = Path(cfg["source"]).resolve(strict=True)
+        key_file = Path(cfg["key_file"]).resolve(strict=True) if cfg.get("key_file") else None
+        out = Path(cfg["out"]) if cfg.get("out") else self._new_dir("restore")
+
+        def check_cancel():
+            if self._cancel.is_set():
+                raise Paused("已暂停还原，源文件和还原钥匙保留")
+
+        def work(job):
+            return restore(source, out, key_file, notify=self._notify(job), check_cancel=check_cancel)
+        return self._start("restore", "还原 " + source.name, work)
+
+    @_safe
+    def check_environment(self):
+        from ..doctor import check_environment
+        from ..redact import redact_data
+        return redact_data(check_environment())
 
     @_safe
     def start_upload(self, cfg):
@@ -631,16 +691,27 @@ class Api:
         return self._start("upload", task_name or workflows.title_for(files), work)
 
     @_safe
-    def resume_task(self, plan, key="", hop_password=""):
+    def resume_task(self, plan, key="", hop_password="", text_cfg=None):
         path = Path(plan)
         summary = self._summary(path)
         if summary["state"] == "complete":
             raise ValueError("该任务已经完成")
+        text_cfg = dict(text_cfg or {})
+        if set(text_cfg) - {"secrets", "video_sources", "export_keys"}:
+            raise ValueError("文案续跑参数无效")
 
         def work(job):
             notify = self._notify(job)
-            result = asyncio.run(publish(path, runtime=self._runtime(notify), notify=notify, cancel=self._cancel,
-                                         key=key or "ABRACADABRA", hop_password=hop_password or None))
+            from ..text_contracts import OperationContext, RuntimeSecrets
+            secrets = RuntimeSecrets(text_cfg.get("secrets", {}))
+            try:
+                result = asyncio.run(publish(path, runtime=self._runtime(notify), notify=notify, cancel=self._cancel,
+                                             key=key or "ABRACADABRA", hop_password=hop_password or None,
+                                             text_context=OperationContext(secrets, self._cancel),
+                                             text_video_sources=text_cfg.get("video_sources"),
+                                             export_text_keys=text_cfg.get("export_keys", [])))
+            finally:
+                secrets.clear()
             return {"plan": str(path), "copies": result["copies"], "task": self._summary(path)}
         return self._start(summary["kind"], summary["title"], work, plan=path)
 
@@ -837,6 +908,92 @@ class Api:
         return self._summary(Path(plan))
 
     # ---------- codec ----------
+    @_text_safe
+    def text_capabilities(self):
+        from ..text_delivery import capabilities
+        return capabilities()
+
+    @_text_safe
+    def preview_text_delivery(self, cfg):
+        from ..text_delivery import parse_recipes, preview
+        from ..text_contracts import ErrorCode, TextOperationError
+        if not isinstance(cfg, dict) or set(cfg) != {"text", "recipes"}:
+            raise TextOperationError(ErrorCode.INVALID_RECIPE)
+        return preview(cfg["text"], parse_recipes(cfg["recipes"]))
+
+    def _text_work(self, cfg, work):
+        from ..text_contracts import OperationContext, RuntimeSecrets, TextOperationError, ErrorCode
+
+        def run(job):
+            secrets = RuntimeSecrets()
+            code = None
+            try:
+                secrets = RuntimeSecrets(cfg.get("secrets", {}))
+                context = OperationContext(secrets, self._cancel, notify=lambda event:
+                    self._notify(job)("文案：" + event.stage.value))
+                result = asyncio.run(work(context))
+            except TextOperationError as error:
+                code = error.code
+            except BaseException:
+                code = ErrorCode.INTEGRITY
+            finally:
+                secrets.clear()
+                # cfg is a private request copy, never settings or task state.
+                cfg.clear()
+            if code is not None:
+                if code == ErrorCode.CANCELLED:
+                    raise Paused("文案操作已取消；源文件保留")
+                raise TextOperationError(code)
+            return result
+        return run
+
+    @_text_safe
+    def start_text_delivery(self, cfg):
+        from ..text_delivery import deliver_text, parse_recipes, preview
+        from ..text_contracts import ErrorCode, TextOperationError
+        fields = {"text", "recipes", "secrets", "video_sources", "output_dir", "export_keys"}
+        if not isinstance(cfg, dict) or set(cfg) - fields or not {"text", "recipes"} <= set(cfg):
+            raise TextOperationError(ErrorCode.INVALID_RECIPE)
+        cfg = dict(cfg)
+        recipes = parse_recipes(cfg["recipes"])
+        preview(cfg["text"], recipes)
+        if (not isinstance(cfg.get("video_sources", {}), dict)
+                or not isinstance(cfg.get("export_keys", []), list)):
+            raise TextOperationError(ErrorCode.INVALID_RECIPE)
+        # User chooses a parent; each operation gets a fresh exclusive directory.
+        parent = Path(cfg["output_dir"]) if cfg.get("output_dir") else self._runs
+        output = parent / ("text-" + uuid.uuid4().hex[:12])
+
+        async def work(context):
+            return await deliver_text(cfg["text"], recipes, output, context,
+                                      video_sources=cfg.get("video_sources"),
+                                      export_keys=cfg.get("export_keys", []))
+        return self._start("text-delivery", "生成文案", self._text_work(cfg, work))
+
+    @_text_safe
+    def start_text_restore(self, cfg):
+        from ..text_delivery import restore_to_file
+        from ..text_layers import DeliveryRecipe
+        from ..text_contracts import ErrorCode, TextOperationError
+        fields = {"text", "video", "key_file", "recipe", "secrets", "output_dir"}
+        if not isinstance(cfg, dict) or set(cfg) - fields:
+            raise TextOperationError(ErrorCode.INVALID_RECIPE)
+        cfg = dict(cfg)
+        if ((cfg.get("text") is None) == (cfg.get("video") is None)
+                or (cfg.get("key_file") is None) == (cfg.get("recipe") is None)):
+            raise TextOperationError(ErrorCode.INVALID_RECIPE)
+        recipe = DeliveryRecipe.from_dict(cfg["recipe"]) if cfg.get("recipe") is not None else None
+        parent = Path(cfg["output_dir"]) if cfg.get("output_dir") else self._runs
+        output = parent / ("text-restored-" + uuid.uuid4().hex[:12] + ".txt")
+
+        async def work(context):
+            parent.mkdir(parents=True, exist_ok=True)
+            return await restore_to_file(output, context=context, text=cfg.get("text"),
+                                         video=Path(cfg["video"]) if cfg.get("video") is not None else None,
+                                         key_file=Path(cfg["key_file"]) if cfg.get("key_file") is not None else None,
+                                         recipe=recipe)
+        return self._start("text-restore", "还原文案", self._text_work(cfg, work))
+
     @_safe
     def encode(self, text, schemes, key=""):
         if not text:

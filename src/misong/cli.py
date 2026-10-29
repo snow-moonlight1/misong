@@ -3,6 +3,7 @@
 Commands:
   nest     one-shot nested encrypted packaging (multi-layer, uncommon formats)
   unest    reverse a nest artifact using its .misong.json manifest
+  restore  restore an artifact/folder with a .mskey portable restore key
   split    one-shot volume split (byte parts + sha256 sidecar)
   join     verify & reassemble split parts
   merge    copy /b style concat (zip offsets auto-fixed when possible)
@@ -15,11 +16,15 @@ Commands:
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from . import formats, merge, pack, split as splitmod
+if TYPE_CHECKING:
+    from . import pack
+
 from .encoders import beast, hajimi, mojibake, plain
 
 
@@ -31,6 +36,7 @@ def _split_pswd(text: str) -> list[str | None]:
 
 def _parse_layers(spec: str, passwords: list[str | None],
                   header_enc: list[bool] | None) -> list[pack.LayerSpec]:
+    from . import formats, pack
     if spec.lstrip().startswith("["):
         raw = json.loads(spec)
         layers = [pack.LayerSpec.from_dict(x) for x in raw]
@@ -56,6 +62,7 @@ def _parse_layers(spec: str, passwords: list[str | None],
 
 
 def cmd_nest(a: argparse.Namespace) -> int:
+    from . import pack
     inputs = [Path(p) for p in a.inputs]
     pwds = _split_pswd(a.password)
     hens: list[bool] | None = None
@@ -75,10 +82,13 @@ def cmd_nest(a: argparse.Namespace) -> int:
     from .preflight import require
     target = require(inputs, layers, out.parent, keep_layers=a.keep_layers)
     out = target / out.name
-    manifest = pack.pack(inputs, layers, out, keep_layers=a.keep_layers)
+    manifest = pack.pack(inputs, layers, out, keep_layers=a.keep_layers, export_key=a.export_key)
     out = out.with_name(manifest["artifact"])
     print("[ok] 产物: " + ", ".join(r["name"] for r in manifest["artifacts"]))
     print(f"[ok] 清单: {out}.misong.json")
+    if a.export_key:
+        from .restore_key import sidecar
+        print(f"[ok] 还原钥匙: {sidecar(out)}")
     for rec in manifest["layers"]:
         tag = "密码" + ("+头加密" if rec["header_enc"] else "") if rec["password"] else "无密码"
         print(f"     外层->内层: {rec.get('format', rec.get('type', 'archive')):<8} {tag:<10} {rec['size']:,}B")
@@ -88,6 +98,7 @@ def cmd_nest(a: argparse.Namespace) -> int:
 
 
 def cmd_unest(a: argparse.Namespace) -> int:
+    from . import pack
     art = Path(a.artifact)
     mf = json.loads(Path(a.manifest).read_text(encoding="utf-8")) if a.manifest else None
     pwds = _split_pswd(a.password)
@@ -97,7 +108,85 @@ def cmd_unest(a: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_restore(a: argparse.Namespace) -> int:
+    from .restore import restore
+    result = restore(Path(a.source), Path(a.out), Path(a.key_file) if a.key_file else None)
+    print(f"[ok] 已校验并还原 {result['layers']} 层：{result['out']}")
+    return 0
+
+
+def _text_recipe_file(path):
+    from .text_delivery import read_text_file, parse_recipes
+    data = json.loads(read_text_file(Path(path)))
+    return parse_recipes(data if isinstance(data, list) else [data])
+
+
+def _text_secrets(recipes, *, video=True):
+    from getpass import getpass
+    from .text_contracts import RuntimeSecrets
+    values = {}
+    for recipe in recipes:
+        for item in (*recipe.layers, recipe.carrier) if video else recipe.layers:
+            if item.secret_slot:
+                values[item.secret_slot] = getpass(f"密钥 [{item.secret_slot}]：")
+    return RuntimeSecrets(values)
+
+
+def cmd_text_deliver(a: argparse.Namespace) -> int:
+    from .text_contracts import OperationContext, ErrorCode, TextOperationError
+    from .text_delivery import deliver_text, read_text_file
+    secrets = None
+    code = None
+    try:
+        recipes = _text_recipe_file(a.recipes)
+        secrets = _text_secrets(recipes)
+        result = asyncio.run(deliver_text(
+            read_text_file(Path(a.source)), recipes, Path(a.out), OperationContext(secrets),
+            video_sources={r.id: a.video for r in recipes if a.video}, export_keys=a.export_key))
+    except TextOperationError as error:
+        code = error.code
+    except Exception:
+        code = ErrorCode.INVALID_RECIPE
+    finally:
+        if secrets is not None:
+            secrets.clear()
+    if code is not None:
+        raise TextOperationError(code)
+    print(f"[ok] 文案交付已生成并回读校验：{result['out']}")
+    return 0
+
+
+def cmd_text_restore(a: argparse.Namespace) -> int:
+    from .text_contracts import OperationContext, RuntimeSecrets, ErrorCode, TextOperationError
+    from .text_delivery import read_text_file, restore_to_file
+    secrets = RuntimeSecrets()
+    code = None
+    try:
+        recipes = _text_recipe_file(a.recipe) if a.recipe else ()
+        if a.recipe and len(recipes) != 1:
+            raise TextOperationError(ErrorCode.INVALID_RECIPE)
+        recipe = recipes[0] if recipes else None
+        if recipe is not None:
+            secrets = _text_secrets((recipe,), video=a.input_kind == "video")
+        result = asyncio.run(restore_to_file(
+            Path(a.out), context=OperationContext(secrets),
+            text=read_text_file(Path(a.source)) if a.input_kind == "text" else None,
+            video=Path(a.source) if a.input_kind == "video" else None,
+            key_file=Path(a.key_file) if a.key_file else None, recipe=recipe))
+    except TextOperationError as error:
+        code = error.code
+    except Exception:
+        code = ErrorCode.INVALID_RECIPE
+    finally:
+        secrets.clear()
+    if code is not None:
+        raise TextOperationError(code)
+    print(f"[ok] 文案已还原（{'摘要校验通过' if result['verified'] else '手动配方，未验证原文摘要'}）：{result['out']}")
+    return 0
+
+
 def cmd_split(a: argparse.Namespace) -> int:
+    from . import split as splitmod
     src = Path(a.file)
     size = splitmod.parse_size(a.size)
     man = splitmod.split(src, size, Path(a.out) if a.out else None, a.prefix)
@@ -110,6 +199,7 @@ def cmd_split(a: argparse.Namespace) -> int:
 
 
 def cmd_join(a: argparse.Namespace) -> int:
+    from . import split as splitmod
     checked = not a.no_verify and splitmod.has_verification(Path(a.part))
     out = splitmod.join(Path(a.part), Path(a.output) if a.output else None,
                         verify=not a.no_verify)
@@ -119,6 +209,7 @@ def cmd_join(a: argparse.Namespace) -> int:
 
 
 def cmd_merge(a: argparse.Namespace) -> int:
+    from . import merge
     files = [Path(f) for f in a.files]
     out = Path(a.output)
     if out.suffix == "":
@@ -130,6 +221,7 @@ def cmd_merge(a: argparse.Namespace) -> int:
 
 
 def cmd_unwrap(a: argparse.Namespace) -> int:
+    from . import merge
     chain = _split_pswd(a.chain_pwd) if a.chain_pwd else None
     res = merge.unwrap(Path(a.file), Path(a.out), password=a.password,
                        only_format=a.format, keep_looking=a.all, chain=chain)
@@ -233,6 +325,7 @@ def cmd_relay(a: argparse.Namespace) -> int:
 
 
 def cmd_formats(_a: argparse.Namespace) -> int:
+    from . import formats
     for k in formats.ORDER:
         f = formats.get(k)
         extra = []
@@ -249,7 +342,14 @@ def cmd_publish(a):
     from .publish import PublishOptions, prepare, publish
     from .rpa.runtime import BrowserRuntime
     from .share_options import ShareOptions
+    from .text_contracts import OperationContext, RuntimeSecrets
+    if a.text_recipes and a.schemes is not None:
+        raise ValueError("--text-recipes 与 --schemes 不能同时指定")
     if a.plan:
+        if a.text_recipes:
+            raise ValueError("--plan 续跑不能覆盖文案配方")
+        if a.restore_key_location != "none":
+            raise ValueError("--plan 续跑沿用任务的还原钥匙，不能覆盖交付位置")
         if a.cleanup_after_upload:
             raise ValueError("--plan 续跑沿用任务保存的清理选项，不能覆盖")
         if a.task_name or a.folder_name:
@@ -269,33 +369,49 @@ def cmd_publish(a):
             layers=_parse_layers(a.layers, _split_pswd(a.password), None), size=a.size,
             disguise=a.disguise, video=Path(a.video) if a.video else None, raw_merge=a.raw,
             body_disk=a.body_disk, hop_disk=a.hop_disk, form=a.form, pwd_hint=a.pwd_hint,
-            schemes=tuple(s.strip() for s in a.schemes.split(",") if s.strip()),
+            schemes=() if a.text_recipes else tuple(s.strip() for s in (a.schemes if a.schemes is not None else "beast,mojibake,hajimi").split(",") if s.strip()),
             share_options=ShareOptions(a.share_expiry, a.share_access),
             body_disks=tuple(s.strip() for s in a.body_disks.split(",") if s.strip()) if a.body_disks else (),
             checksum=a.checksum, task_name=a.task_name, folder_name=a.folder_name,
-            cleanup_after_upload=a.cleanup_after_upload)
+            cleanup_after_upload=a.cleanup_after_upload, restore_key_location=a.restore_key_location,
+            text_recipes=tuple(r.to_dict() for r in _text_recipe_file(a.text_recipes)) if a.text_recipes else None)
         plan_path = prepare(options)
     if not a.prepare:
         runtime = BrowserRuntime(headless=a.headless, timeout=a.upload_timeout, diagnostics=a.diagnostics,
                                  browser_channel=a.browser)
-        asyncio.run(publish(plan_path, runtime=runtime, key=a.key, hop_password=a.hop_password))
+        secrets = RuntimeSecrets()
+        try:
+            saved = json.loads(plan_path.read_text(encoding="utf-8"))
+            from .text_delivery import parse_recipes
+            recipes = parse_recipes(saved["text_recipes"]) if "text_recipes" in saved else ()
+            done = {r["recipe_id"] for r in saved.get("text_delivery", {}).get("recipes", [])
+                    if r["status"] == "complete"}
+            secrets = _text_secrets(tuple(r for r in recipes if r.id not in done))
+            asyncio.run(publish(plan_path, runtime=runtime, key=a.key, hop_password=a.hop_password,
+                                text_context=OperationContext(secrets),
+                                text_video_sources={r.id: a.text_video for r in recipes if a.text_video},
+                                export_text_keys=a.export_text_key))
+        finally:
+            secrets.clear()
     print(f"任务文件：{plan_path}")
     return 0
 
 
 def cmd_account(a):
     import asyncio
-    from .rpa.runtime import BrowserRuntime, DEFAULT_STATE
+    from .rpa.runtime import BrowserRuntime
+    from .paths import resolve_paths
     from .rpa.drivers import PROFILES
     from .providers import PROVIDERS
     from .sharing import disk_name
     if a.op == "status":
+        state_dir = resolve_paths().state
         for disk in PROVIDERS:
             if disk not in PROFILES:
                 print(f"{disk}: unimplemented / 自动驱动待适配，可手动回填分享")
                 continue
-            state = DEFAULT_STATE / f"{disk}.json"
-            status_path = DEFAULT_STATE / f"{disk}-status.json"
+            state = state_dir / f"{disk}.json"
+            status_path = state_dir / f"{disk}-status.json"
             status = json.loads(status_path.read_text(encoding="utf-8"))["status"] if status_path.exists() else "probe"
             print(f"{disk}: {status} / {'有本机会话（需在线确认有效）' if state.exists() else '未登录'}")
         return 0
@@ -319,12 +435,39 @@ def cmd_gui(a):
     return launch(legacy=a.legacy, debug=a.debug or None)
 
 
+def cmd_doctor(a):
+    from .doctor import check_environment
+    from .redact import redact_data
+    report = redact_data(check_environment())
+    if a.json:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        for item in report["checks"]:
+            print(f"[{item['status']}] {item['message']}")
+    return 0 if report["ok"] else 1
+
+
+def cmd_data_migrate(a):
+    from .paths import migrate_data
+    migrate_data(Path(a.source), Path(a.destination))
+    print("[ok] 已复制数据目录；源数据保留，已有相同内容可重复迁移")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     from . import __version__
     p = argparse.ArgumentParser(prog="misong", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--version", action="version", version=f"misong {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
+
+    doctor = sub.add_parser("doctor", help="只读检查依赖、7-Zip、Node、浏览器和桌面环境")
+    doctor.add_argument("--json", action="store_true", help="输出脱敏 JSON 报告")
+    doctor.set_defaults(fn=cmd_doctor)
+    migration = sub.add_parser("data-migrate", help="显式复制旧数据目录到新位置，保留源数据且拒绝冲突")
+    migration.add_argument("source")
+    migration.add_argument("destination")
+    migration.set_defaults(fn=cmd_data_migrate)
 
     n = sub.add_parser("nest", help="一键多层嵌套加密打包")
     n.add_argument("inputs", nargs="+", help="要加密的文件/目录（多个则先归拢）")
@@ -337,6 +480,7 @@ def build_parser() -> argparse.ArgumentParser:
     n.add_argument("-o", "--output", help="产物路径（默认 输入名+外层扩展名）")
     n.add_argument("--disguise", help="最外层伪装扩展名，如 .mp4/.lz4/.png")
     n.add_argument("--keep-layers", action="store_true", help="保留每层中间产物")
+    n.add_argument("--export-key", action="store_true", help="明确导出可直接还原的 .mskey 钥匙（包含层密码，默认不导出）")
     n.set_defaults(fn=cmd_nest)
 
     u = sub.add_parser("unest", help="按清单逆向解开 nest 产物")
@@ -345,6 +489,30 @@ def build_parser() -> argparse.ArgumentParser:
     u.add_argument("-o", "--out", required=True)
     u.add_argument("--manifest", help="手动指定 .misong.json（默认找同名 sidecar）")
     u.set_defaults(fn=cmd_unest)
+
+    restore = sub.add_parser("restore", help="用 .mskey 钥匙一键校验、合卷和逐层还原")
+    restore.add_argument("source", help="最终产物、任意分卷或下载文件夹")
+    restore.add_argument("--key-file", help="还原钥匙；省略时自动寻找同目录唯一的 .mskey")
+    restore.add_argument("-o", "--out", required=True, help="空的还原目录")
+    restore.set_defaults(fn=cmd_restore)
+
+    delivery = sub.add_parser("text-deliver", help="按有序方案生成文字/帧语视频，可显式导出 .tkey")
+    delivery.add_argument("source", help="UTF-8 原文文件，保留换行")
+    delivery.add_argument("--recipes", required=True, help="公开配方 JSON 文件（不含密码）")
+    delivery.add_argument("--video", help="视频方案使用的本地源视频；运行时联网操作官网")
+    delivery.add_argument("--export-key", action="append", default=[], metavar="RECIPE_ID",
+                          help="明确为此方案导出 .tkey，可重复；默认不导出")
+    delivery.add_argument("-o", "--out", required=True, help="尚不存在的输出目录")
+    delivery.set_defaults(fn=cmd_text_deliver)
+
+    tr = sub.add_parser("text-restore", help="按 .tkey 或手动配方还原文字/本地视频")
+    tr.add_argument("source", help="UTF-8 文字文件或本地视频")
+    tr.add_argument("--input-kind", choices=["text", "video"], required=True)
+    tr_source = tr.add_mutually_exclusive_group(required=True)
+    tr_source.add_argument("--key-file", help="敏感文案还原钥匙 .tkey")
+    tr_source.add_argument("--recipe", help="单个手动公开配方 JSON，密码交互输入")
+    tr.add_argument("-o", "--out", required=True, help="尚不存在的 UTF-8 输出文件")
+    tr.set_defaults(fn=cmd_text_restore)
 
     s = sub.add_parser("split", help="一键分卷")
     s.add_argument("file")
@@ -411,6 +579,8 @@ def build_parser() -> argparse.ArgumentParser:
     pub.add_argument("-s", "--size", default="1900M", help="默认 1900MB；只填数字按 MB；空字符串禁用分卷")
     pub.add_argument("--disguise", default="")
     pub.add_argument("--checksum", action="store_true", help="额外上传标准 SHA-256 校验文件（默认关）")
+    pub.add_argument("--restore-key-location", choices=["none", "local", "body", "hop"], default="none",
+                     help="还原钥匙：不导出/仅本地/随本体/随第一跳；明确选择后才导出")
     pub.add_argument("--cleanup-after-upload", action="store_true",
                      help="所有网盘上传并分享完成后，删除本任务加工产物；保留源文件及任务记录（默认关）")
     pub.add_argument("--video", help="可选门面视频")
@@ -425,7 +595,11 @@ def build_parser() -> argparse.ArgumentParser:
     pub.add_argument("--share-access", choices=["default", "none", "code"], default="default",
                      help="所有阶段统一提取码：平台默认/无/自动生成")
     pub.add_argument("--pwd-hint", default="请向分享者获取解压密码。")
-    pub.add_argument("--schemes", default="beast,mojibake,hajimi")
+    pub.add_argument("--schemes", default=None)
+    pub.add_argument("--text-recipes", help="有序文案方案 JSON；与旧 --schemes 互斥")
+    pub.add_argument("--text-video", help="本次文案视频载体的源视频，续跑时重新指定")
+    pub.add_argument("--export-text-key", action="append", default=[], metavar="RECIPE_ID",
+                     help="本次明确为指定方案导出 .tkey；不保存为任务偏好")
     pub.add_argument("--key", default="ABRACADABRA")
     pub.add_argument("--prepare", action="store_true", help="仅生成产物与任务，不联网")
     pub.add_argument("--headless", action="store_true", help="已有登录态后无头执行")

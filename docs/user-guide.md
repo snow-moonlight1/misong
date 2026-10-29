@@ -3,6 +3,8 @@
 安装步骤见 [README](../README.md#安装)。运行产物默认放在仓库下被 Git 忽略的 `runs/`；
 接收方如何还原见[接收方指南](receiver-guide.md)，各网盘支持情况见[支持情况](status.md)。
 
+v0.2 开发版新增有序文案与帧语视频的 CLI/API 交付和 `.tkey` 还原，命令与配方示例见[文案交付集成](dev/text-delivery.md)。当前 GUI 第四步仍是旧文案选择器，新层编辑和文案还原表单尚未接入。
+
 ## 启动
 
 双击仓库根目录 `start-gui.cmd`，或：
@@ -68,7 +70,34 @@
 单独上传同样生成 v2 `relay-plan.json`，暂停/失败后在任务中心续跑；单独打包在输出目录写
 `misong-task.json` 元信息。任务在后台线程执行，同一时间只允许一个；进度只显示真实阶段与文件数。
 暂停上传会保留已确认文件的检查点；本地压缩只能在该阶段结束后响应暂停。任务运行中关闭窗口会先暂停，
-检查点保存后自动关闭。密码和魔曰密钥只在内存中使用；界面偏好存入 `rpa/state/ui-settings.json`，不含密码。
+检查点保存后自动关闭。普通任务和界面偏好不保存密码；仅明确选择导出时，打包层密码封装进 `.mskey`。
+魔曰密钥仍仅在内存使用；界面偏好存入 `rpa/state/ui-settings.json`，不含密码。
+
+## 还原钥匙与一键还原（0.2 开发中）
+
+- “加密打包”交付选项可勾选“导出 .mskey 还原钥匙”，与最终产物一起生成，名称如 `资料.7z.mskey`。
+- “一条龙发布”可选择“不导出 / 仅保留本地 / 随本体上传分享 / 随第一跳指引分享”。第一跳选项须配合中转模式；
+  加密中转时，钥匙作为独立文件与 `guide.7z` 一起交付。仅生成本地产物时不会联网上传钥匙。
+- 产物自动清理仍保留本地钥匙。任务记录只保存钥匙的路径、文件指纹与交付位置，不保存里面的密码内容。
+- 接收方在“一键还原”页一起拖入下载文件夹或任意分卷、对应钥匙；先校验全部最终产物，再自动合卷和逐层解包。
+- 导出是一次明确的密码交付操作；持有钥匙和产物即可还原。文件内使用二进制封装，不承诺阻止持有者解析。
+  旧任务未保存的密码无法自动找回；其资源仍可用原来的 `unest` / `unwrap` 和已知密码还原。
+
+```powershell
+misong nest MyRes -L zip,7z -P innerPW,outerPW --export-key -o runs/resource.7z
+misong publish MyRes -L zip -P archivePW --restore-key-location body --prepare -o runs/key-release
+misong restore runs/key-release/body --key-file runs/key-release/body/MyRes.zip.mskey -o restored
+```
+
+命令行输入密码可能进入命令历史，日常使用优先在桌面层编辑器里填写。
+
+## 数据目录与环境检查（0.2 开发中）
+
+`misong doctor` 只读检查当前依赖和浏览器，不访问网盘；加 `--json` 输出脱敏报告。
+需要自定义会话、设置及默认任务目录时，在启动前设置 `MISONG_HOME`，其下使用 `rpa/state/` 与 `runs/`。
+源码运行未设置时沿用原目录；普通安装默认使用 Windows 用户数据目录。
+已有会话迁移请先关闭应用及专用浏览器，再用 `misong data-migrate 旧目录 新目录` 显式复制；
+原目录保留，冲突会停止，详细操作见[数据目录说明](dev/data-home.md)。本轮不会自动搬迁你的现有会话。
 
 - `misong.py gui --debug`（或环境变量 `MISONG_DEBUG=1`）打开 WebView 开发者工具。
 - `misong.py gui --legacy` 使用旧版 Tk 界面；未安装 pywebview 时也会自动回退到旧版。

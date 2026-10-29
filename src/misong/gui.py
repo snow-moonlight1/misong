@@ -16,6 +16,7 @@ from . import pack
 from .desktop.branding import ICON_ICO, configure_windows_app
 from .publish import PublishOptions, import_share, prepare, publish
 from .rpa.runtime import BrowserRuntime, DEFAULT_STATE, ROOT
+from .paths import resolve_paths
 from .sharing import encode_copy
 from .providers import PROVIDERS
 from .rpa.drivers import PROFILES
@@ -327,7 +328,7 @@ class App:
         except (Exception, SystemExit) as e:
             messagebox.showerror("配置有误", str(e))
             return
-        out = ROOT / "runs" / (datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6])
+        out = resolve_paths().runs / (datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6])
         options = PublishOptions(list(self.inputs), out, layers, values["size"], values["disguise"],
                                  Path(values["video"]) if values["video"] else None,
                                  values["merge"] == "copy /b 纯拼接", selected_disks[0], values["hop_disk"],
@@ -399,7 +400,7 @@ class App:
         self.status.set("正在暂停 · 本地打包会在当前阶段完成后停止；上传检查点将保留。")
 
     def open_output(self):
-        folder = self.current_plan.parent if self.current_plan else ROOT / "runs"
+        folder = self.current_plan.parent if self.current_plan else resolve_paths().runs
         folder.mkdir(parents=True, exist_ok=True)
         os.startfile(str(folder))
 
@@ -425,16 +426,17 @@ class App:
                                                              browser_channel=browser), op)(disk)))
 
     def refresh_accounts(self):
+        state_dir = resolve_paths().state
         for disk, var in self.account_labels.items():
             if disk not in PROFILES:
                 var.set("自动驱动待适配 · 可手动回填分享")
                 continue
-            status_file = DEFAULT_STATE / (disk + "-status.json")
+            status_file = state_dir / (disk + "-status.json")
             try:
                 status = json.loads(status_file.read_text(encoding="utf-8"))["status"] if status_file.exists() else "probe"
             except (ValueError, KeyError):
                 status = "probe"
-            var.set(("已有本机会话" if (DEFAULT_STATE / (disk + ".json")).exists() else "尚未登录") + " · " + status)
+            var.set(("已有本机会话" if (state_dir / (disk + ".json")).exists() else "尚未登录") + " · " + status)
 
     def convert(self, decode):
         scheme, text, key = self.codec_scheme.get(), self.codec_input.get("1.0", "end-1c"), self.vars["key"].get()

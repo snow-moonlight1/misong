@@ -12,3 +12,7 @@ assets/
 # Local runtime state: browser profiles, account sessions, publish tasks
 rpa/state/
 runs/
+
+# Portable restore keys contain decryption credentials.
+*.mskey
+*.tkey

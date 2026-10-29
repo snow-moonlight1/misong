@@ -34,10 +34,16 @@ python -m venv .venv
 - 任务元数据同时读取 `misong-task.json` 和旧版 `nde-task.json`，更新时保留已有字段并写新名。
   旧任务的远端目录、检查点和文件指纹沿用原记录，不因更名重新上传。
 - 源码运行的仓库根推算深度不变，继续使用 `rpa/state/`、`ui-settings.json`、`ui-templates.json`。
-  包改名不搬迁浏览器档案或认证数据；数据目录可配置及安装后的迁移仍按 0.2 前置工作实施。
+  包改名不搬迁浏览器档案或认证数据。0.2 已接入可配置的数据目录；未设置 `MISONG_HOME` 的源码运行仍保留这些原位置。
 - `MISONG_DEBUG`、测试用 `MISONG_FFMPEG` 优先，仍兼容旧 `NDE_DEBUG`、`NDE_FFMPEG`。
 
 ## 目录结构
+
+当前发布/开发范围以[路线图](../roadmap.md)与[支持情况](../status.md)为准。v0.2 下一主线是
+[文案处理链、`.tkey` 与帧语官网 RPA](../plans/2026-10-29-text-pipeline/README.md)，A/B/C 已完成 S 后端集成，GUI 层编辑及还原表单仍待 E。
+多 agent 协作按[并行分包](../plans/2026-10-29-text-pipeline/PARALLEL.md)分配文件。03-framewords-compat 与两份净室提示词为后续备用，不属于本轮主线。
+公共 Python 类型位于 `text_contracts.py` 和 `carriers/base.py`，使用及签名见[契约 v1](../plans/2026-10-29-text-pipeline/CONTRACTS.md)。运行时对象不可直接写入任务/设置，只有严格白名单的公开配方可持久化。基础类型不导入 Playwright，纯文字操作不启动浏览器。新增命令、桌面桥、发布逐方案检查点和恢复行为见[文案交付集成](text-delivery.md)。
+未来启动净室任务时，研究/实现侧不得跟随链接读取历史源码调研 `RESEARCH.md` 或 `tmp/` 中第三方研究材料。
 
 ```
 misong.py                入口（等同安装后的 misong 命令）
@@ -69,6 +75,26 @@ docs/                 用户文档；docs/dev/ 为开发与调研资料
 文件区提示与操作按钮分行布局；浏览器回归覆盖 940、1090、1320 像素宽度，检查提示可读且三个按钮均在区域内。
 
 ## 打包层模型
+
+统一数据目录、显式迁移、只读环境自检及脱敏的集成说明分别见
+[数据目录](data-home.md)、[doctor](doctor.md)、[脱敏](redaction.md)。这些模块来自并行任务，
+公共 CLI / API 接线及额外的集成安全回归由主线统一完成。
+
+### 可选还原钥匙与一键还原
+
+- `restore_key.py` 定义 `.mskey` v1：`MISONGKEY` + NUL + 版本字节 1（11 字节），
+  随机 32 字节封装钥匙、12 字节 nonce，以及 AES-256-GCM 密文和 16 字节 tag。整个头部作为 AAD。
+  载荷为 UTF-8 JSON：`version`、去除本机视频路径等无关字段的 v2 `manifest`、与外到内层序对齐的 `passwords`。
+- 封装钥匙与密文一起携带，目的是避免直接输出可读密码清单并检测意外损坏；任何持有者都可解析，
+  不提供持有者隔离、来源签名或防伪保证，不使用软件内置固定密码。文件大小上限 4 MiB，最多 128 层。
+- `pack.pack(..., export_key=True)` 是明确导出入口；普通清单仍只含密码布尔值，
+  `.mskey` 默认 Git 忽略。任务只记录钥匙路径、交付位置和文件指纹，不记录其内容。
+- `restore.restore` 先验证结构和所有输入指纹，再复用 `pack.unest`；每层回调报告进度。
+  临时解包位于输出父目录，全部成功后移动到空输出目录；失败时清理本次临时中间文件并保留输入。
+- 导出的钥匙单独保留，上传后清理不能删除它；第一跳换链时复用原钥匙指纹，修改文件则拒绝继续上传。
+- 并行文件分工见 [v0.2 协作计划](../plans/2026-10-26-v0.2-parallel.md)；其他 agent 不修改公共 CLI/API/前端。
+
+### 现有处理层
 
 - `layers.py` 定义四类层：archive（压缩/加密）、cover（门面视频）、split（分卷）、rename（改后缀），按内到外执行。
   `.misong.json` v2 记录完整层序（外到内存储），v1 清单、旧模板和旧任务设置自动兼容。

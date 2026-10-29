@@ -8,6 +8,8 @@ from urllib.parse import parse_qs, urlsplit
 
 from .encoders import beast, hajimi, mojibake, plain
 from .providers import ALIASES, HOSTS, disk_name
+# Public migration entry for callers moving from parallel copy selections.
+from .text_layers import recipes_from_schemes
 
 COPY_SCHEMES = ("beast", "mojibake", "hajimi", "base64", "base64url", "base32", "base85", "hex", "url", "reverse", "rot13")
 
@@ -69,6 +71,7 @@ def parse_share(text: str, disk: str, *, allowed_hosts=None) -> ShareInfo:
 
 
 def encode_copy(text: str, schemes=("beast", "mojibake", "hajimi"), *, key="ABRACADABRA") -> dict[str, str]:
+    """Legacy parallel outputs; each scheme always consumes the original text."""
     result = {}
     for scheme in schemes:
         if scheme == "beast":

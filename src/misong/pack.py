@@ -42,7 +42,7 @@ def _stage_inputs(inputs, stage):
 
 
 def pack(inputs: list[Path], layers: list[LayerSpec], out_path: Path,
-         keep_layers: bool = False) -> dict:
+         keep_layers: bool = False, *, export_key: bool = False) -> dict:
     inputs = [Path(p).resolve(strict=True) for p in inputs]
     if not inputs:
         raise ValueError("请先选择资源")
@@ -56,6 +56,10 @@ def pack(inputs: list[Path], layers: list[LayerSpec], out_path: Path,
     if layers[-1].type != "archive" and not out_path.name.endswith(output_ext(layers)):
         out_path = out_path.with_suffix(output_ext(layers))
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    if export_key:
+        from .restore_key import sidecar
+        if sidecar(out_path).exists():
+            raise ValueError("还原钥匙已存在，请更换产物名称")
     records = []
     with tempfile.TemporaryDirectory(prefix=".misong-pack-", dir=out_path.parent) as td:
         tmp = Path(td)
@@ -114,11 +118,15 @@ def pack(inputs: list[Path], layers: list[LayerSpec], out_path: Path,
                 "layers": list(reversed(records))}  # outermost first, as in v1
     out_path.with_name(out_path.name + MANIFEST_EXTS[0]).write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    if export_key:
+        from . import restore_key
+        restore_key.write(restore_key.sidecar(out_path), manifest,
+                          [ls.password if ls.type == "archive" else None for ls in reversed(layers)])
     return manifest
 
 
 def unest(artifact: Path, out_dir: Path, passwords: list[str | None],
-          manifest: dict | None = None) -> list[Path]:
+          manifest: dict | None = None, *, progress=None) -> list[Path]:
     artifact, out_dir = Path(artifact), Path(out_dir)
     mf = manifest
     if mf is None:
@@ -135,6 +143,8 @@ def unest(artifact: Path, out_dir: Path, passwords: list[str | None],
     with tempfile.TemporaryDirectory(prefix=".misong-unest-", dir=out_dir) as td:
         tmp, current = Path(td), artifact
         for i, rec in enumerate(mf["layers"]):
+            if progress:
+                progress(i + 1, rec)
             step = tmp / f"u{i}"
             step.mkdir()
             kind = rec.get("type", "archive")

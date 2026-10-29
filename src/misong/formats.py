@@ -239,7 +239,8 @@ def compress(fmt_key: str, src: Path, dst: Path, password: str | None = None,
     src, dst = Path(src).resolve(), Path(dst).resolve()
     if level is not None and not 0 <= level <= 9:
         raise ValueError("压缩等级应为 0–9")
-    if f.key in ("7z", "zip"):
+    # The bundled 7za rejects non-ASCII ZIP passwords; pyzipper uses UTF-8.
+    if f.key in ("7z", "zip") and not (f.key == "zip" and password and not password.isascii()):
         args = ["a", f"-t{f.key}", "-y", "-bd", "-mmt=on", f"-mx={5 if level is None else level}"]
         if password:
             args += ["-p" + password, "-mhe=on" if f.key == "7z" and header_enc else
@@ -291,7 +292,7 @@ def extract(fmt_key: str, src: Path, workdir: Path, password: str | None = None)
     """
     f = get(fmt_key)
     if f.kind == "container":
-        if f.key in ("7z", "zip"):
+        if f.key in ("7z", "zip") and not (f.key == "zip" and password and not password.isascii()):
             out = Path(workdir).resolve() / "extracted"
             out.mkdir(parents=True, exist_ok=True)
             if _sevenzip(["x", "-y", "-bd", "-p" + (password or "__MISONG_NO_PASSWORD__"),

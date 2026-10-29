@@ -9,19 +9,21 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from ..jobs import exclusive, save_json
+from ..paths import resolve_paths
 from ..sharing import disk_name
 from ..publish import Paused
 from .drivers import BrowserDiskDriver, DriverBlocked, PROFILES, REGISTRY
 
 ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_STATE = ROOT / "rpa" / "state"
+DEFAULT_STATE = resolve_paths().state
 BROWSERS = ("chromium", "chrome", "msedge")
 
 
 class BrowserRuntime:
-    def __init__(self, *, state_dir=DEFAULT_STATE, headless=False, notify=print, cancel=None,
+    def __init__(self, *, state_dir=None, headless=False, notify=print, cancel=None,
                  timeout=1800, login_timeout=None, diagnostics=False, browser_channel=None):
-        self.state_dir = Path(state_dir)
+        # None 时按构造时刻的 MISONG_HOME 等解析；导入后的环境变化不锁死。
+        self.state_dir = Path(state_dir) if state_dir is not None else resolve_paths().state
         self.headless = headless
         self.notify = notify
         self.cancel = cancel
