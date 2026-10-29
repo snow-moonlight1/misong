@@ -18,6 +18,8 @@
       <button class="nav-item active" data-page="pipeline"><i data-icon="flow"></i><span>一条龙发布</span></button>
       <div class="nav-label">单独使用</div>
       <button class="nav-item" data-page="pack"><i data-icon="lock"></i><span>加密打包</span></button>
+      <button class="nav-item" data-page="restore"><i data-icon="folder"></i><span>一键还原</span></button>
+      <button class="nav-item" data-page="textrestore"><i data-icon="key"></i><span>文案还原</span></button>
       <button class="nav-item" data-page="upload"><i data-icon="cloud"></i><span>上传分享</span></button>
       <button class="nav-item" data-page="codec"><i data-icon="wand"></i><span>链接加密</span></button>
       <div class="nav-label">管理</div>
@@ -50,7 +52,7 @@
           <article class="card" data-step="1"><div class="card-head"><span class="step">1</span><div><h2>选择资源</h2><p>文件或文件夹，可多选，名称不能重复。</p></div></div><div data-mount="names"></div><div data-mount="files"></div></article>
           <article class="card" data-step="2" hidden><div class="card-head"><span class="step">2</span><div><h2>加密打包</h2><p>从内到外自由添加压缩、门面视频、分卷和改后缀层。</p></div></div><div data-mount="layers"></div><div data-mount="packopts"></div></article>
           <article class="card" data-step="3" hidden><div class="card-head"><span class="step">3</span><div><h2>上传与分享</h2><p>可同时发到多个网盘，接收方任选其一下载。</p></div></div><div data-mount="disks"></div></article>
-          <article class="card" data-step="4" hidden><div class="card-head"><span class="step">4</span><div><h2>链接文案</h2><p>分享链接会被转换成以下文案，便于发布。</p></div></div><div data-mount="schemes"></div></article>
+          <article class="card" data-step="4" hidden><div class="card-head"><span class="step">4</span><div><h2>链接文案</h2><p>分享完成后，最终分享文案按并列文案或交付方案生成；文案失败只重试本步，不重新上传。</p></div></div><div data-mount="schemes"></div></article>
           <div class="step-nav" data-mount="stepnav"></div>
         </div>
         <aside class="side" data-mount="run"></aside>
@@ -68,6 +70,18 @@
         </div>
         <aside class="side" data-mount="run"></aside>
       </div>
+    </section>
+
+    <!-- 一键还原 -->
+    <section class="page" data-page="restore">
+      <header class="page-head"><div><h1>一键还原</h1><p>拖入下载的压缩包或分卷文件夹，再添加 .mskey 还原钥匙，自动校验、合卷和逐层解包。</p></div></header>
+      <div class="split"><div class="stack"><article class="card"><div class="card-head"><div><h2>下载文件与还原钥匙</h2><p>压缩包和钥匙可以一起拖入；分卷请全部下载到同一文件夹。</p></div></div><div data-mount="restorefiles"></div></article></div><aside class="side" data-mount="run"></aside></div>
+    </section>
+
+    <!-- 文案还原 -->
+    <section class="page" data-page="textrestore">
+      <header class="page-head"><div><h1>文案还原</h1><p>粘贴文案或选择本地帧语视频，配合 .tkey 文案还原钥匙或手动配方，逐层还原出原始分享文案。</p></div></header>
+      <div class="split"><div class="stack"><article class="card"><div class="card-head"><div><h2>输入与钥匙</h2><p>纯文字离线处理；视频需联网由密送操作帧语官网。</p></div></div><div data-mount="textrestore"></div></article></div><aside class="side" data-mount="run"></aside></div>
     </section>
 
     <!-- 上传分享 -->

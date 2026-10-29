@@ -49,6 +49,8 @@ class Fake:
         self.extra: list[dict] = []
         self.removed: set[str] = set()
         self.live_state = ""
+        self.requests: list[tuple] = []
+        self.next_pick: list[str] | None = None
 
     def stages(self, done):
         return [
@@ -82,8 +84,9 @@ class Fake:
         args = args or []
         api = self.api
         if method in ("bootstrap", "share_choices", "encode", "decode", "save_settings", "templates", "save_template", "delete_template",
-                      "reset_templates"):
+                      "reset_templates", "text_capabilities"):
             if method == "save_settings":
+                self.requests.append((method, args))
                 return {"ok": True, "data": True}
             return getattr(api, method)(*args)
         if method == "choose_output_dir":
@@ -125,15 +128,21 @@ class Fake:
             data = {"ok": not self.space_blocked, "required_bytes": 27_000_000_000, "out": r"D:\misong\runs\pending",
                     "message": "需要约 25.15 GB，当前最大可用盘仅 1 GB，请更换位置" if self.space_blocked else "本次约需中间空间 25.15 GB，总读写约 74.20 GB，预计约 8.4 分钟"}
         elif method == "pick_files":
-            data = [r"D:\资源\intro.mp4"] if len(args) > 1 and args[1] else [r"D:\资源\S01E01.mkv", r"D:\资源\字幕.zip"]
+            if self.next_pick:
+                data, self.next_pick = self.next_pick, None
+            else:
+                data = [r"D:\资源\intro.mp4"] if len(args) > 1 and args[1] else [r"D:\资源\S01E01.mkv", r"D:\资源\字幕.zip"]
         elif method == "pick_folder":
             data = [r"D:\资源\纪录片合集"]
         elif method == "describe_paths":
             data = [{"path": p, **FILES.get(p, {"name": Path(p).name, "dir": False, "size": 1})} for p in args[0]]
         elif method == "folder_files":
             data = [r"D:\资源\S01E01.mkv"]
-        elif method in ("start_pipeline", "start_upload", "start_pack", "resume_task"):
-            kind = {"start_pipeline": "pipeline", "start_upload": "upload", "start_pack": "pack"}.get(method, "pipeline")
+        elif method in ("start_pipeline", "start_upload", "start_pack", "start_restore", "resume_task", "start_text_restore"):
+            kind = {"start_pipeline": "pipeline", "start_upload": "upload", "start_pack": "pack", "start_restore": "restore",
+                    "start_text_restore": "text-restore"}.get(method, "pipeline")
+            # Requests are recorded for tests; they are in-memory only, never written.
+            self.requests.append((method, args))
             self.job = {"id": "j1", "kind": kind, "title": "发布 纪录片合集", "step": "上传 夸克网盘：S01E01.part2.mp4（2/4）",
                         "plan": r"D:\misong\runs\a\relay-plan.json"}
             data = dict(self.job)
@@ -159,9 +168,16 @@ class Fake:
         if promote:
             self.live_state = "complete"
         result = {"plan": r"D:\misong\runs\a\relay-plan.json", "copies": COPIES}
+        if kind == "pipeline-recipes":
+            kind, result = "pipeline", {"plan": r"D:\misong\runs\a\relay-plan.json", "copies": {}}
+        if kind == "text-restore":
+            result = {"out": r"D:\misong\runs\text-restored-demo.txt", "verified": True, "original_sha256": "0" * 64}
         if kind == "pack":
             result = {"out": r"D:\misong\runs\c", "chain": "lz4 → 7z🔒", "files": [{"name": "纪录片合集.7z", "size": 7_300_000_000}],
                       "parts": [{"name": f"纪录片合集.7z.{i:03d}", "size": 1_900_000_000} for i in range(1, 4)]}
+        if kind == "restore":
+            result = {"out": r"D:\misong\runs\restored", "layers": 5, "verified": True,
+                      "files": [{"name": "纪录片合集", "path": r"D:\misong\runs\restored\纪录片合集"}]}
         self.events.append({"type": "job", "state": "done", "job": job or {"kind": kind}, "result": result})
         self.events.append({"type": "log", "text": "夸克网盘：分享完成"})
 
@@ -313,6 +329,20 @@ def main():
         click(".page.active [data-stepnext]", 400)
         # step 4: copy schemes, then publish
         shot("05b-pipeline-step4")
+        # step 4 delivery recipes: 魔曰→视频 + 纯文本; key export stays off by default
+        click(".page.active [data-tmode='recipes']", 300)
+        click(".page.active [data-radd='mojibake-video']", 300)
+        click(".page.active [data-radd='base64']", 300)
+        assert not page.locator(".page.active [data-rexport]").first.is_checked()
+        page.fill(".page.active [data-recipe='0'] input[data-secret$='/l1']", "inner")
+        click(".page.active [data-recipe='0'] [data-rvideo]", 300)
+        page.fill(".page.active [data-recipe='0'] input[data-secret$='/video']", "outer")
+        page.locator(".page.active [data-recipe='0'] [data-secret$='/video']").dispatch_event("change")
+        page.check(".page.active [data-recipe='0'] [data-rexport]")
+        page.wait_for_timeout(300)
+        shot_at("05c-pipeline-step4-recipes", ".page.active [data-mount='schemes']")
+        assert "需要联网" in page.locator(".page.active [data-mount='schemes']").inner_text()
+        click(".page.active [data-tmode='legacy']", 300)
         page.click(".page.active [data-run='publish']")
         page.wait_for_timeout(1500)
         shot("06-pipeline-running")
@@ -345,6 +375,33 @@ def main():
         assert fake.preflight_calls > previous_calls, "changing output directory must refresh space preflight"
         assert "selected-output-2" in page.locator(".page.active .run-note").inner_text()
         shot("10c-output-directory-changed", 5000)
+
+        nav("restore")
+        shot("10d-restore-empty")
+        page.evaluate("paths => window.misongDrop(paths)", [r"D:\资源\资源.mp4.001", r"D:\资源\资源.mp4.mskey"])
+        page.wait_for_timeout(300)
+        assert not page.locator(".page.active [data-run='go']").is_disabled()
+        shot("10e-restore-ready")
+        page.click(".page.active [data-run='go']")
+        page.wait_for_function("() => window.__MISONG_APP__.S.job?.kind === 'restore'")
+        fake.finish("restore")
+        page.get_by_text("还原完成", exact=True).wait_for(timeout=10000)
+        shot("10f-restore-done")
+
+        nav("textrestore")
+        shot("10g-text-restore-empty")
+        page.fill(".page.active [data-trtext]", "U0dWc2JHOD0=")
+        page.locator(".page.active [data-trtext]").dispatch_event("change")
+        fake.next_pick = [r"D:\资源\message.tkey"]
+        click(".page.active [data-trpick='key']", 300)
+        click(".page.active [data-trkind='video']", 300)
+        click(".page.active [data-trpick='video']", 300)
+        shot("10h-text-restore-video")
+        page.click(".page.active [data-run='go']")
+        page.wait_for_function("() => window.__MISONG_APP__.S.job?.kind === 'text-restore'")
+        fake.finish("text-restore")
+        page.get_by_text("文案还原完成", exact=True).wait_for(timeout=10000)
+        shot("10i-text-restore-done")
 
         nav("upload")
         page.click(".page.active [data-act='pick-files']")

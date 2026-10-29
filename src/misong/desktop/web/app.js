@@ -46,6 +46,9 @@ const S = {
   pipeline: { task_name: "", folder_name: "", cleanup_after_upload: false, inputs: [], layers_version: 2, checksum: false, layers: [], video: "", disguise: "", size: "1900M", raw_merge: false, disks: [], form: "direct", hop: "feimao", hopPw: "", pwdHint: "请向分享者获取解压密码。", expiry: "default", access: "default", schemes: ["beast", "mojibake", "hajimi"], key: "", result: null },
   pack: { inputs: [], layers_version: 2, checksum: false, layers: [], video: "", disguise: "", split: false, size: "1900M", raw_merge: false, result: null },
   upload: { task_name: "", folder_name: "", files: [], checksum: false, disks: [], expiry: "default", access: "default", schemes: ["beast", "mojibake", "hajimi"], key: "", result: null },
+  restore: { inputs: [], keyFile: null, out: "", result: null },
+  // 文案还原：密钥只在内存中保存，不进入 saveSettings
+  textrestore: { kind: "text", text: "", video: "", keyFile: "", manual: false, recipeJson: "", secrets: {}, out: "", result: null },
   codec: { mode: "encode", schemes: ["beast"], key: "", input: "", output: null, outScheme: null },
   tasks: { items: [], sel: null, detail: null, filter: "all", query: "", loadError: "", reloadDetail: false },
   accounts: [],
@@ -448,7 +451,7 @@ async function addPaths(target, paths, filesOnly) {
   described.forEach((d) => { if (!seen.has(d.path)) { target.push(d); seen.add(d.path); } });
 }
 
-window.__MISONG_APP__ = { S, call, toast };
+window.__MISONG_APP__ = { S, call, toast, rerender, recipeToPublic };
 
 /* ======================================================================
    PAGE: pipeline / pack / upload share a files+config+run layout
@@ -509,6 +512,8 @@ function videoField(layer, index) {
 function packOptionsMount(page, state) {
   const el = mount(page, "packopts"); if (!el) return;
   el.innerHTML = `<label class="check"><input type="checkbox" data-model="checksum" ${state.checksum ? "checked" : ""}>附带校验文件（SHA-256）</label><p class="hint">仅上传最后一层的文件 / 分卷；清单与还原说明保留在本地。</p>`;
+  if (page === "pack") el.innerHTML += `<div class="sub"><label class="check"><input type="checkbox" data-model="export_key" ${state.export_key ? "checked" : ""}>导出 .mskey 还原钥匙</label><p class="hint">接收方拖入产物和钥匙即可还原。钥匙包含解密凭据，请交给有权接收资源的人。</p></div>`;
+  if (page === "pipeline") el.innerHTML += selectField("还原钥匙 · .mskey", state.restore_key_location || "none", [{key:"none", label:"不导出"}, {key:"local", label:"仅保留本地"}, {key:"body", label:"随本体上传分享"}, {key:"hop", label:"随第一跳指引分享（需中转）"}], "restore_key_location", "选择导出后，接收方无需逐层填写密码；本地钥匙会保留。");
   if (page === "pipeline") el.innerHTML += `<div class="sub"><label class="check"><input type="checkbox" data-model="cleanup_after_upload" ${state.cleanup_after_upload ? "checked" : ""}>上传完成后删除本地加工产物</label><p class="hint">全部目标网盘上传并分享成功后，删除本任务生成的压缩包、门面视频、分卷、校验文件和中转文件。保留源文件、原始视频、任务记录及还原说明；仅生成本地产物、暂停或失败时不删除。</p></div>`;
   bindModels(el, state, () => runPanel(page));
 }
@@ -578,6 +583,7 @@ async function refreshShareChoices(page) {
 
 function schemesMount(page, state) {
   const el = mount(page, "schemes"); if (!el) return;
+  if (page === "pipeline") { textStepMount(el, state); return; }
   el.innerHTML = schemePicker(state.schemes) + `<div class="sub">${pwField("魔曰密钥 · 生成魔曰文案时使用", state.key, "key", "默认 ABRACADABRA")}</div>`;
   paintIcons(el);
   bindSchemePicker(el, state.schemes, () => { schemesMount(page, state); runPanel(page); });
@@ -593,6 +599,7 @@ function stepSummary(n) {
   if (n === 1) return st.inputs.length ? st.inputs.length + " 项资源" : "未添加";
   if (n === 2) return st.layers.length ? st.layers.map((l) => layerLabel(l) + (l.password && canLock(l.fmt) ? "🔒" : "")).join(" → ") : "未设置";
   if (n === 3) return st.disks.length ? plainDisks(st.disks) + (st.form !== "direct" ? " · 中转" : "") : "未选网盘";
+  if (isRecipeMode(st)) return recipeSummary(st);
   return st.schemes.length ? plainSchemes(st.schemes) : "未选文案";
 }
 function stepProblem(n) {
@@ -602,6 +609,7 @@ function stepProblem(n) {
   if (n === 2 && layerProblems(st).length) return layerProblems(st)[0];
   if (n === 3 && !st.disks.length) return "请至少选择一个本体网盘";
   if (n === 3 && st.form === "complex" && !st.hopPw) return "加密中转需要填写第一跳包密码";
+  if (n === 4 && isRecipeMode(st)) return recipeProblems(st)[0] || "";
   if (n === 4 && !st.schemes.length) return "请至少选择一种链接文案";
   return "";
 }
@@ -660,14 +668,18 @@ function runPanel(page) {
 function pageKind(page) { return page === "pipeline" ? "pipeline" : page; }
 function missingFor(page) {
   const st = S[page]; const m = [];
+  if (page === "restore") { if (!st.inputs.length) m.push("添加压缩包或下载文件夹"); if (!st.keyFile) m.push("添加 .mskey 还原钥匙"); return m; }
+  if (page === "textrestore") return textRestoreProblems(st);
   if (page === "upload") { if (!st.files.length) m.push("添加要上传的文件"); if (!st.disks.length) m.push("选择至少一个网盘"); return m; }
   if (!st.inputs.length) m.push("添加资源");
   if (!st.layers.length) m.push("设置至少一层格式");
   m.push(...layerProblems(st));
   if (st.inputs.length && st.layers.length) { if (!st._preflight) m.push("等待空间预检"); else if (!st._preflight.ok) m.push(st._preflight.message); }
   if (page === "pipeline") {
+    if (st.restore_key_location === "hop" && st.form === "direct") m.push("钥匙随第一跳交付时，请选择中转方式");
     if (!st.disks.length) m.push("选择本体网盘");
-    if (!st.schemes.length) m.push("选择至少一种链接文案");
+    if (isRecipeMode(st)) m.push(...recipeProblems(st));
+    else if (!st.schemes.length) m.push("选择至少一种链接文案");
     if (st.form === "complex" && !st.hopPw) m.push("填写第一跳包密码");
     if ((st._step || 1) < 4 && !m.length) m.push(`按步骤确认设置（当前第 ${st._step || 1} / 4 步）`);
   }
@@ -683,7 +695,9 @@ function summaryCard(page) {
   const push = (k, v, warn) => rows.push(`<div><dt>${esc(k)}</dt><dd class="${warn ? "warn" : ""}">${v}</dd></div>`);
   const busy = !!S.job; const miss = missingFor(page);
   const dis = busy || miss.length ? "disabled" : "";
+  if (page === "textrestore") return textRestoreSummary(st, miss, busy, dis);
   const notes = missingNote(miss) + busyNote(busy) + (page === "upload" ? "" : preflightNote(st));
+  if (page === "restore") return `<div class="run"><h3>校验并还原</h3><p class="hint">根据钥匙自动完成全部处理层，校验不符或缺卷时停止。</p>${missingNote(miss)}${busyNote(busy)}<button class="btn btn-primary btn-lg btn-block" data-run="go" ${dis}>${icon("folder")}开始还原</button><p class="run-note">输出到空目录，全部层成功后交付还原结果。</p></div>`;
   if (page === "pack") {
     push("资源", st.inputs.length ? st.inputs.length + " 项" : "<span class='muted'>未选择</span>", !st.inputs.length);
     push("加密层", chainText(st));
@@ -692,7 +706,7 @@ function summaryCard(page) {
     push("校验文件", st.checksum ? "附带 SHA-256" : "不附带");
     return `<div class="run"><h3>生成本地产物</h3><dl class="summary">${rows.join("")}</dl>${notes}
       <div class="run-actions"><button class="btn btn-primary btn-lg btn-block" data-run="go" ${dis}>${icon("lock")}开始打包</button></div>
-      <p class="run-note">产物目录：${esc(S.meta.runs)}。密码仅用于本次打包，不会写入磁盘。</p></div>`;
+      <p class="run-note">产物目录：${esc(S.meta.runs)}。${st.export_key ? "已选择导出还原钥匙；普通清单不包含密码。" : "密码仅用于本次打包；未选择导出钥匙。"}</p></div>`;
   }
   if (page === "upload") {
     push("文件", st.files.length ? st.files.length + " 个" : "<span class='muted'>未选择</span>", !st.files.length);
@@ -709,7 +723,8 @@ function summaryCard(page) {
   push("产物", esc(outExt(st) || "—"));
   push("本体网盘", diskNames(st.disks), !st.disks.length);
   push("分享方式", S.meta.forms[st.form] + (st.form !== "direct" ? " · " + diskNames([st.hop]) : ""), st.form === "complex" && !st.hopPw);
-  push("文案", st.schemes.length ? schemeNames(st.schemes) : "<span class='muted'>未选</span>", !st.schemes.length);
+  if (isRecipeMode(st)) push("文案", esc(recipeSummary(st)) + (st.recipes.some((r) => r.carrier === "framewords") ? " · 需联网" : ""), !st.recipes.length);
+  else push("文案", st.schemes.length ? schemeNames(st.schemes) : "<span class='muted'>未选</span>", !st.schemes.length);
   push("本地产物", st.cleanup_after_upload ? "分享完成后删除 · 保留源文件" : "保留");
   return `<div class="run"><h3>开始发布</h3><dl class="summary">${rows.join("")}</dl>${notes}
     <div class="run-actions">
@@ -757,16 +772,20 @@ function resultCard(page, result) {
       <div class="run-actions">${result.plan ? `<button class="btn btn-primary btn-block" data-resume="${esc(result.plan)}">${icon("play")}继续任务</button>` : ""}
       <button class="btn btn-block" data-newrun>${icon("refresh")}重新开始</button></div></div>`;
   }
+  if (page === "textrestore") return textRestoreResult(result);
+  if (page === "restore") return `<div class="result-card success"><div class="result-title"><span class="ok-ic">${icon("check")}</span>还原完成</div><p class="result-msg">产物校验通过，已完成 ${esc(result.layers)} 层处理。</p><div class="mini-files">${(result.files || []).map(f => `<div class="mini-file">${esc(f.name)}</div>`).join("")}</div><div class="run-actions"><button class="btn btn-primary btn-block" data-open="${esc(result.out)}">${icon("folder")}打开还原目录</button><button class="btn btn-block" data-newrun>还原其他文件</button></div></div>`;
   if (page === "pack") {
     const files = (result.files || []).concat(result.parts || []);
     return `<div class="result-card success"><div class="result-title"><span class="ok-ic">${icon("check")}</span>打包完成</div>
       <p class="result-msg">格式链：${esc(result.chain || "")}</p>
+      ${result.restore_key ? `<p class="callout">已导出还原钥匙：${esc(baseName(result.restore_key))}</p>` : ""}
       <div class="mini-files">${files.map((f) => `<div class="mini-file"><span>${esc(f.name)}</span><span>${fmtSize(f.size)}</span></div>`).join("")}</div>
       <div class="run-actions"><button class="btn btn-primary btn-block" data-open="${esc(result.out)}">${icon("folder")}打开产物目录</button><button class="btn btn-block" data-newrun>${icon("plus")}新建打包</button></div></div>`;
   }
   // publish / upload success with copies
   const copies = result.copies || {};
   const keys = Object.keys(copies);
+  if (!keys.length && page === "pipeline" && isRecipeMode(S.pipeline)) return recipeResultCard(result);
   const tabs = keys.map((k, i) => `<button class="${i === 0 ? "on" : ""}" data-tab="${esc(k)}">${esc(schemeNames([k]))}</button>`).join("");
   const first = keys[0];
   return `<div class="result-card success"><div class="result-title"><span class="ok-ic">${icon("check")}</span>发布完成</div>
@@ -790,18 +809,24 @@ function bindResult(el, page, result) {
 /* ---- job lifecycle ---- */
 async function startJob(page, mode, confirmed) {
   const st = S[page];
-  if (!confirmed && page !== "upload") {
+  if (!confirmed && page !== "upload" && page !== "restore" && page !== "textrestore") {
     checkPasswords(page, () => startJob(page, mode, true), () => { if (page === "pipeline") goStep(2); focusMissingPw(page); });
     return;
   }
   try {
     let data;
-    if (page === "pack") {
-      data = await call("start_pack", { inputs: st.inputs.map((f) => f.path), layers: layerPayload(st), layers_version: 2, checksum: st.checksum });
+    if (page === "textrestore") {
+      data = await call("start_text_restore", textRestorePayload(st));
+    } else if (page === "restore") {
+      data = await call("start_restore", { source: st.inputs[0].path, key_file: st.keyFile.path, out: st.out });
+    } else if (page === "pack") {
+      data = await call("start_pack", { inputs: st.inputs.map((f) => f.path), layers: layerPayload(st), layers_version: 2, checksum: st.checksum, export_key: !!st.export_key });
     } else if (page === "upload") {
       data = await call("start_upload", { task_name: st.task_name, folder_name: st.folder_name, files: st.files.map((f) => f.path), checksum: st.checksum, body_disks: st.disks, expiry: st.expiry, access: st.access, schemes: st.schemes, key: st.key });
     } else {
-      data = await call("start_pipeline", { task_name: st.task_name, folder_name: st.folder_name, cleanup_after_upload: st.cleanup_after_upload, inputs: st.inputs.map((f) => f.path), layers: layerPayload(st), layers_version: 2, checksum: st.checksum, body_disks: st.disks, form: st.form, hop_disk: st.hop, hop_password: st.hopPw, pwd_hint: st.pwdHint, expiry: st.expiry, access: st.access, schemes: st.schemes, key: st.key, upload: mode === "publish" });
+      const cfg = { task_name: st.task_name, folder_name: st.folder_name, cleanup_after_upload: st.cleanup_after_upload, restore_key_location: st.restore_key_location || "none", inputs: st.inputs.map((f) => f.path), layers: layerPayload(st), layers_version: 2, checksum: st.checksum, body_disks: st.disks, form: st.form, hop_disk: st.hop, hop_password: st.hopPw, pwd_hint: st.pwdHint, expiry: st.expiry, access: st.access, schemes: st.schemes, key: st.key, upload: mode === "publish" };
+      if (isRecipeMode(st)) Object.assign(cfg, recipePipelinePayload(st));
+      data = await call("start_pipeline", cfg);
     }
     S.job = data; S.job.task = null; st.result = null;
     saveSettings();
@@ -816,7 +841,9 @@ function layerPayload(st) { return st.layers.map((l) => {
 async function resumeTask(plan, page) {
   try {
     const st = page ? S[page] : null;
-    const data = await call("resume_task", plan, st ? st.key : "", (st && st.hopPw) || "");
+    const args = [plan, st ? st.key : "", (st && st.hopPw) || ""];
+    if (page === "pipeline" && isRecipeMode(st)) args.push(recipeResumePayload(st));
+    const data = await call("resume_task", ...args);
     S.job = data; S.job.task = null; if (st) st.result = null;
     renderJobCard(); renderAll();
     go("tasks");
@@ -824,7 +851,7 @@ async function resumeTask(plan, page) {
 }
 async function pauseJob() { try { await call("pause"); toast("正在暂停…", "warn"); } catch (e) { toast(e.message, "err"); } }
 $("#jobPause").addEventListener("click", pauseJob);
-$("#jobView").addEventListener("click", () => { if (S.job) go(S.job.kind === "account" ? "accounts" : S.job.kind === "pipeline" ? "pipeline" : S.job.kind === "pack" ? "pack" : S.job.kind === "upload" ? "upload" : "tasks"); });
+$("#jobView").addEventListener("click", () => { if (S.job) go(S.job.kind === "account" ? "accounts" : S.job.kind === "text-restore" ? "textrestore" : ["pipeline", "pack", "upload", "restore"].includes(S.job.kind) ? S.job.kind : "tasks"); });
 
 function renderJobCard() {
   renderOutputDir();
@@ -839,7 +866,7 @@ function renderJobCard() {
 function onJobEvent(ev) {
   const { state, job, result, error } = ev;
   const kind = job.kind;
-  const page = kind === "pipeline" ? "pipeline" : kind;
+  const page = kind === "text-restore" ? "textrestore" : kind;
   if (state === "running") { S.job = Object.assign(S.job || {}, job); renderJobCard(); return; }
   S.job = null; renderJobCard();
   if (kind === "account") {
@@ -859,13 +886,270 @@ function rerender(page) {
   if (page === "pipeline") { namingMount(page, st); renderFilesMount("pipeline", st, "inputs", false); layerEditor(st, '[data-mount="layers"]', $('.page[data-page="pipeline"]')); packOptionsMount("pipeline", st); disksMount("pipeline", st); schemesMount("pipeline", st); runPanel("pipeline"); }
   else if (page === "pack") { renderFilesMount("pack", st, "inputs", false); layerEditor(st, '[data-mount="layers"]', $('.page[data-page="pack"]')); packOptionsMount("pack", st); runPanel("pack"); }
   else if (page === "upload") { namingMount(page, st); renderFilesMount("upload", st, "files", true); disksMount("upload", st); schemesMount("upload", st); runPanel("upload"); }
+  else if (page === "restore") { renderRestore(); runPanel(page); }
+  else if (page === "textrestore") { renderTextRestore(); runPanel(page); }
   else if (page === "codec") renderCodec();
   else if (page === "tasks") renderTasks();
   else if (page === "accounts") renderAccounts();
 }
-function renderAll() { ["pipeline", "pack", "upload"].forEach((p) => { if (S.page === p) rerender(p); else runPanel(p); }); }
+function renderAll() { ["pipeline", "pack", "upload", "restore", "textrestore"].forEach((p) => { if (S.page === p) rerender(p); else runPanel(p); }); }
+
+async function addRestorePaths(paths) {
+  const st = S.restore;
+  const values = await call("describe_paths", paths);
+  const keys = values.filter(f => f.path.toLowerCase().endsWith(".mskey") && !f.dir);
+  if (keys.length > 1) throw new Error("请一次添加一把对应的还原钥匙");
+  if (keys.length) st.keyFile = keys[0];
+  const inputs = values.filter(f => !f.path.toLowerCase().endsWith(".mskey"));
+  if (inputs.length) {
+    const folders = inputs.filter(f => f.dir);
+    if (folders.length > 1 || (folders.length && inputs.length > 1)) throw new Error("请选择一个下载文件夹，或同目录中的分卷");
+    st.inputs = inputs;
+  }
+  st.result = null; rerender("restore");
+}
+function renderRestore() {
+  const st = S.restore, el = mount("restore", "restorefiles");
+  el.innerHTML = `${dropzone("restore", "拖入压缩包、分卷文件夹和 .mskey", "两个文件也可以一起拖入", false)}
+    <div class="row" style="gap:8px;margin:12px 0;flex-wrap:wrap"><button class="btn" data-restorepick="out">选择还原目录</button><button class="btn btn-ghost" data-restoreclear>清空</button></div>
+    <dl class="summary"><div><dt>下载资源</dt><dd>${st.inputs.length ? st.inputs.map(f => esc(f.name)).join("、") : "未选择"}</dd></div><div><dt>还原钥匙</dt><dd>${st.keyFile ? esc(st.keyFile.name) : "未选择 .mskey"}</dd></div><div><dt>还原目录</dt><dd>${esc(st.out || "自动创建新的还原目录")}</dd></div></dl>`;
+  paintIcons(el);
+  $$("[data-act]", el).forEach(b => b.addEventListener("click", async () => {
+    try { await addRestorePaths(await call({"paste-paths":"clipboard_paths", "pick-files":"pick_files", "pick-folder":"pick_folder"}[b.dataset.act])); } catch (e) { toast(e.message, "err"); }
+  }));
+  $$("[data-restorepick]", el).forEach(b => b.addEventListener("click", async () => {
+    try { const mode = b.dataset.restorepick, paths = await call(mode === "file" ? "pick_files" : "pick_folder"); if (!paths.length) return; if (mode === "out") { st.out = paths[0]; rerender("restore"); } else await addRestorePaths(paths); } catch (e) { toast(e.message, "err"); }
+  }));
+  $("[data-restoreclear]", el).addEventListener("click", () => { st.inputs = []; st.keyFile = null; st.out = ""; st.result = null; rerender("restore"); });
+}
 
 /* ---------- init per-page (one-time structure fill) ---------- */
+/* ---------- v0.2 第四步：文案交付方案 & 文案还原 ----------
+ * 对接 desktop/api.py 已实现的 text_capabilities / start_pipeline(recipes) /
+ * resume_task(text_cfg) / start_text_restore。配方是公开结构；密钥只在内存中，
+ * 不进入 saveSettings、日志或任务。钥匙导出默认关闭。 */
+const TEXT_LAYER_SCHEMES = ["beast", "mojibake", "hajimi", "base64", "base64url", "base32", "base85", "hex", "url", "reverse", "rot13"];
+const TEXT_LAYER_KIND = { beast: "编码", hajimi: "编码", mojibake: "加密", base64: "编码", base64url: "编码", base32: "编码", base85: "编码", hex: "编码", url: "编码", reverse: "变换", rot13: "变换" };
+// 仅为字符膨胀粗估；真实长度以生成结果为准（魔曰/兽曰含随机化）。
+const TEXT_GROWTH = { base64: 4 / 3, base64url: 4 / 3, base32: 1.6, base85: 1.25, hex: 2, url: 3, reverse: 1, rot13: 1, beast: 4, hajimi: 4, mojibake: 1.5 };
+const ESTIMATE_INPUT = 64; // 典型分享链接 + 提取码的字符数
+function textLabel(k) { const s = (S.meta && S.meta.schemes || []).find((x) => x.key === k); return s ? s.label : k; }
+function ensureText(st) {
+  if (!st.textMode) st.textMode = "legacy";
+  if (!Array.isArray(st.recipes)) st.recipes = [];
+  if (!st.textSecrets) st.textSecrets = {};
+  if (!st.textVideos) st.textVideos = {};
+  if (!Array.isArray(st.exportKeys)) st.exportKeys = [];
+  return st;
+}
+function isRecipeMode(st) { return ensureText(st).textMode === "recipes"; }
+function videoCap() { return ((S.textCaps && S.textCaps.carriers) || []).find((c) => c.format_id === "framewords") || null; }
+function newRecipeId(st) { let i = st.recipes.length + 1; while (st.recipes.some((r) => r.id === "r" + i)) i++; return "r" + i; }
+function newRecipe(st, preset) {
+  const id = newRecipeId(st);
+  const r = { id, name: "方案 " + id.slice(1), layers: [], carrier: "text", videoPw: false };
+  if (preset === "mojibake-video") { r.name = "魔曰 → 视频"; r.layers = [{ id: "l1", scheme: "mojibake", keyed: true }]; r.carrier = "framewords"; r.videoPw = true; }
+  else if (preset === "base64") { r.name = "Base64 纯文本"; r.layers = [{ id: "l1", scheme: "base64", keyed: false }]; }
+  return r;
+}
+function layerSlot(r, l) { return r.id + "/" + l.id; }
+function videoSlot(r) { return r.id + "/video"; }
+function recipeToPublic(r) {
+  return { version: 1, id: r.id, name: r.name || r.id,
+    layers: r.layers.map((l) => ({ id: l.id, scheme: l.scheme, version: 1, params: {}, secret_slot: l.scheme === "mojibake" && l.keyed ? layerSlot(r, l) : null })),
+    carrier: r.carrier === "framewords"
+      ? { format_id: "framewords", version: 1, mode: "standard", params: {}, secret_slot: r.videoPw ? videoSlot(r) : null }
+      : { format_id: "text", version: 1, mode: "plain", params: {}, secret_slot: null } };
+}
+function recipeSecrets(st) {
+  const out = {};
+  st.recipes.forEach((r) => { const p = recipeToPublic(r); [...p.layers, p.carrier].forEach((x) => { if (x.secret_slot && st.textSecrets[x.secret_slot]) out[x.secret_slot] = st.textSecrets[x.secret_slot]; }); });
+  return out;
+}
+function recipeVideos(st) { const out = {}; st.recipes.forEach((r) => { if (r.carrier === "framewords" && st.textVideos[r.id]) out[r.id] = st.textVideos[r.id]; }); return out; }
+function recipeExports(st) { return st.exportKeys.filter((id) => st.recipes.some((r) => r.id === id)); }
+function recipePipelinePayload(st) {
+  return { schemes: [], recipes: st.recipes.map(recipeToPublic), text_secrets: recipeSecrets(st), text_video_sources: recipeVideos(st), export_text_keys: recipeExports(st) };
+}
+function recipeResumePayload(st) { return { secrets: recipeSecrets(st), video_sources: recipeVideos(st), export_keys: recipeExports(st) }; }
+function recipeSummary(st) {
+  if (!st.recipes.length) return "未添加方案";
+  return st.recipes.map((r) => (r.layers.length ? r.layers.map((l) => textLabel(l.scheme)).join("→") : "裸链接") + "→" + (r.carrier === "framewords" ? "视频" : "文本")).join("；");
+}
+function recipeProblems(st) {
+  const m = [];
+  if (!st.recipes.length) { m.push("至少添加一个文案交付方案"); return m; }
+  st.recipes.forEach((r) => {
+    const name = r.name || r.id;
+    if (r.layers.length > 32) m.push(`${name}：文字层最多 32 层`);
+    r.layers.forEach((l) => { if (l.scheme === "mojibake" && l.keyed && !st.textSecrets[layerSlot(r, l)]) m.push(`${name}：填写魔曰密钥`); });
+    if (r.carrier === "framewords") {
+      const cap = videoCap();
+      if (!cap || !cap.can_encode) m.push(`${name}：当前环境不支持帧语视频载体`);
+      if (!st.textVideos[r.id]) m.push(`${name}：选择本地源视频`);
+      if (r.videoPw && !st.textSecrets[videoSlot(r)]) m.push(`${name}：填写视频解锁密码`);
+    }
+  });
+  if (st.recipes.length > 16) m.push("最多 16 个交付方案");
+  return m;
+}
+function estimateChars(r) {
+  let n = ESTIMATE_INPUT; const steps = [];
+  r.layers.forEach((l) => { n = Math.ceil(n * (TEXT_GROWTH[l.scheme] || 1)); steps.push(n); });
+  return steps;
+}
+function recipeCard(st, r, i) {
+  const cap = videoCap();
+  const steps = estimateChars(r);
+  const opts = TEXT_LAYER_SCHEMES.map((k) => ({ key: k, label: textLabel(k) + " · " + TEXT_LAYER_KIND[k] }));
+  const layers = r.layers.map((l, j) => `<div class="tlayer" data-tl="${j}"><span class="tl-idx">${j + 1}</span>
+      <select class="select" data-tlscheme>${opts.map((o) => `<option value="${o.key}" ${o.key === l.scheme ? "selected" : ""}>${esc(o.label)}</option>`).join("")}</select>
+      ${l.scheme === "mojibake" ? `<label class="chk"><input type="checkbox" data-tlkeyed ${l.keyed ? "checked" : ""}>使用密钥</label>${l.keyed ? `<input class="input" type="password" autocomplete="off" data-secret="${esc(layerSlot(r, l))}" placeholder="魔曰密钥（不保存）" value="${esc(st.textSecrets[layerSlot(r, l)] || "")}">` : "<small class='muted'>默认密钥 ABRACADABRA，仅混淆</small>"}` : `<small class="muted">${TEXT_LAYER_KIND[l.scheme] === "编码" ? "仅编码，不提供密码保护" : "可逆变换，不提供密码保护"}</small>`}
+      <em class="tl-chars" title="按 ${ESTIMATE_INPUT} 字符链接粗估">≈${steps[j]} 字</em>
+      <span class="grow"></span><button class="btn btn-sm btn-ghost" data-tlup ${j === 0 ? "disabled" : ""} title="上移">↑</button><button class="btn btn-sm btn-ghost" data-tldown ${j === r.layers.length - 1 ? "disabled" : ""} title="下移">↓</button><button class="btn btn-sm btn-ghost" data-tlrm title="删除">✕</button></div>`).join("");
+  const video = r.carrier === "framewords";
+  const exported = st.exportKeys.includes(r.id);
+  return `<div class="recipe" data-recipe="${i}">
+    <div class="recipe-head"><input class="input" data-rname maxlength="60" value="${esc(r.name)}" aria-label="方案名称"><span class="grow"></span><button class="btn btn-sm btn-ghost" data-rrm>${icon("trash")}删除方案</button></div>
+    <div class="tl-chain"><div class="tlayer origin"><span class="tl-idx">0</span><b>分享文案原文</b><em class="tl-chars">≈${ESTIMATE_INPUT} 字</em></div>${layers || "<p class='hint'>未加文字层：直接交付裸链接。</p>"}</div>
+    <div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn btn-sm" data-tladd ${r.layers.length >= 32 ? "disabled" : ""}>${icon("plus")}添加文字层</button></div>
+    <div class="carrier"><span class="carrier-label">末端载体</span>
+      <label class="chk"><input type="radio" name="carrier-${esc(r.id)}" value="text" data-rcarrier ${video ? "" : "checked"}>纯文本（本机离线）</label>
+      <label class="chk ${cap ? "" : "disabled"}"><input type="radio" name="carrier-${esc(r.id)}" value="framewords" data-rcarrier ${video ? "checked" : ""} ${cap ? "" : "disabled"}>帧语视频（官网网页模式）</label></div>
+    ${video ? `<div class="callout warn">${icon("info")}<span>视频载体由密送自动操作帧语官网生成并独立回读校验，<b>需要联网并依赖官网可用</b>；不是离线编解码。仅开放已验证的标准画面模式，容量由官网决定，超出时会明确失败。B 站链接暂不支持自动读取。</span></div>
+      <div class="grid2"><div class="field"><span>本地源视频</span><div class="row" style="gap:6px"><input class="input" readonly value="${esc(st.textVideos[r.id] || "")}" placeholder="未选择"><button class="btn btn-sm" data-rvideo>选择</button></div></div>
+      <div class="field"><span><label class="chk"><input type="checkbox" data-rvideopw ${r.videoPw ? "checked" : ""}>视频解锁密码</label></span>${r.videoPw ? `<input class="input" type="password" autocomplete="off" data-secret="${esc(videoSlot(r))}" placeholder="仅交给官网页面，不保存" value="${esc(st.textSecrets[videoSlot(r)] || "")}">` : "<small class='muted'>不设密码时任何人可读取</small>"}</div></div>` : ""}
+    <label class="chk key-export"><input type="checkbox" data-rexport ${exported ? "checked" : ""}>导出文案还原钥匙 .tkey（默认关闭；仅保存在本地，持有钥匙即可还原，请按解密凭据交付）</label>
+  </div>`;
+}
+function textStepMount(el, st) {
+  ensureText(st);
+  if (!S.textCaps && !S._textCapsLoading) {
+    S._textCapsLoading = true;
+    call("text_capabilities").then((c) => { S.textCaps = c; }).catch(() => { S.textCaps = { carriers: [] }; }).finally(() => { S._textCapsLoading = false; if (S.page === "pipeline") schemesMount("pipeline", st); });
+  }
+  const legacy = st.textMode !== "recipes";
+  const mode = `<div class="seg" role="tablist"><button class="${legacy ? "on" : ""}" data-tmode="legacy">并列文案（旧版）</button><button class="${legacy ? "" : "on"}" data-tmode="recipes">交付方案（文字链 + 载体）</button></div>`;
+  if (legacy) {
+    el.innerHTML = mode + schemePicker(st.schemes) + `<div class="sub">${pwField("魔曰密钥 · 生成魔曰文案时使用", st.key, "key", "默认 ABRACADABRA")}</div>`;
+    paintIcons(el);
+    bindSchemePicker(el, st.schemes, () => { schemesMount("pipeline", st); runPanel("pipeline"); });
+    bindModels(el, st);
+  } else {
+    el.innerHTML = mode + `<p class="hint">每个方案独立生成一份结果：按顺序处理文字，再输出纯文本或视频。编码层（Base64、兽曰等）只改变写法，不是密码保护；只有带密钥的魔曰层和视频密码提供加密。密钥只用于本次，不写入任务或设置。</p>`
+      + `<div class="recipes">${st.recipes.map((r, i) => recipeCard(st, r, i)).join("") || "<p class='muted'>尚未添加方案。</p>"}</div>`
+      + `<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn" data-radd="plain">${icon("plus")}裸链接 → 文本</button><button class="btn" data-radd="base64">${icon("plus")}Base64 → 文本</button><button class="btn" data-radd="mojibake-video" ${videoCap() ? "" : "disabled"}>${icon("plus")}魔曰 → 视频</button></div>`
+      + `<p class="hint">容量：纯文本上限 1 MB；“≈字”为按 ${ESTIMATE_INPUT} 字符链接的粗估，魔曰/兽曰含随机化，以生成结果为准，不会自动截断。</p>`;
+    paintIcons(el);
+    bindRecipeEditor(el, st);
+  }
+  $$("[data-tmode]", el).forEach((b) => b.addEventListener("click", () => { st.textMode = b.dataset.tmode; schemesMount("pipeline", st); runPanel("pipeline"); }));
+}
+function bindRecipeEditor(el, st) {
+  const redraw = () => { schemesMount("pipeline", st); runPanel("pipeline"); };
+  $$("[data-radd]", el).forEach((b) => b.addEventListener("click", () => { if (st.recipes.length >= 16) return toast("最多 16 个方案", "warn"); st.recipes.push(newRecipe(st, b.dataset.radd)); redraw(); }));
+  $$("[data-recipe]", el).forEach((card) => {
+    const r = st.recipes[+card.dataset.recipe]; if (!r) return;
+    $("[data-rname]", card).addEventListener("input", (e) => { r.name = e.target.value; });
+    $("[data-rname]", card).addEventListener("change", () => runPanel("pipeline"));
+    $("[data-rrm]", card).addEventListener("click", () => {
+      st.recipes.splice(+card.dataset.recipe, 1);
+      st.exportKeys = st.exportKeys.filter((id) => id !== r.id); delete st.textVideos[r.id];
+      Object.keys(st.textSecrets).forEach((k) => { if (k.startsWith(r.id + "/")) delete st.textSecrets[k]; });
+      redraw();
+    });
+    $("[data-tladd]", card).addEventListener("click", () => { let n = r.layers.length + 1; while (r.layers.some((l) => l.id === "l" + n)) n++; r.layers.push({ id: "l" + n, scheme: "base64", keyed: false }); redraw(); });
+    $$("[data-tl]", card).forEach((row) => {
+      const j = +row.dataset.tl, l = r.layers[j];
+      $("[data-tlscheme]", row).addEventListener("change", (e) => { l.scheme = e.target.value; l.keyed = l.scheme === "mojibake"; redraw(); });
+      const k = $("[data-tlkeyed]", row); if (k) k.addEventListener("change", () => { l.keyed = k.checked; if (!l.keyed) delete st.textSecrets[layerSlot(r, l)]; redraw(); });
+      const up = $("[data-tlup]", row); up.addEventListener("click", () => { if (j > 0) { r.layers.splice(j - 1, 0, r.layers.splice(j, 1)[0]); redraw(); } });
+      const dn = $("[data-tldown]", row); dn.addEventListener("click", () => { if (j < r.layers.length - 1) { r.layers.splice(j + 1, 0, r.layers.splice(j, 1)[0]); redraw(); } });
+      $("[data-tlrm]", row).addEventListener("click", () => { delete st.textSecrets[layerSlot(r, l)]; r.layers.splice(j, 1); redraw(); });
+    });
+    $$("[data-rcarrier]", card).forEach((x) => x.addEventListener("change", () => { r.carrier = x.value; if (r.carrier !== "framewords") { delete st.textVideos[r.id]; delete st.textSecrets[videoSlot(r)]; } redraw(); }));
+    const pw = $("[data-rvideopw]", card); if (pw) pw.addEventListener("change", () => { r.videoPw = pw.checked; if (!r.videoPw) delete st.textSecrets[videoSlot(r)]; redraw(); });
+    const vb = $("[data-rvideo]", card); if (vb) vb.addEventListener("click", async () => { try { const p = await call("pick_files", false, true); if (p && p[0]) { st.textVideos[r.id] = p[0]; redraw(); } } catch (e) { toast(e.message, "err"); } });
+    $("[data-rexport]", card).addEventListener("change", (e) => { st.exportKeys = st.exportKeys.filter((id) => id !== r.id); if (e.target.checked) st.exportKeys.push(r.id); runPanel("pipeline"); });
+  });
+  $$("[data-secret]", el).forEach((inp) => {
+    inp.addEventListener("input", () => { if (inp.value) st.textSecrets[inp.dataset.secret] = inp.value; else delete st.textSecrets[inp.dataset.secret]; });
+    inp.addEventListener("change", () => runPanel("pipeline"));
+  });
+}
+const TEXT_STATUS = { pending: "待处理", running: "进行中", complete: "已完成", blocked: "失败 · 可重试", cancelled: "已取消 · 可继续" };
+function recipeResultCard(result) {
+  const dir = result.plan ? String(result.plan).replace(/[\\/][^\\/]*$/, "") : "";
+  const st = S.pipeline;
+  const rows = st.recipes.map((r) => `<div class="mini-file"><span>${esc(r.name || r.id)}</span><span>${r.carrier === "framewords" ? "视频 · 已独立回读校验" : "文本 · 已逐字校验"}${st.exportKeys.includes(r.id) ? " · 含 .tkey" : ""}</span></div>`).join("");
+  return `<div class="result-card success"><div class="result-title"><span class="ok-ic">${icon("check")}</span>全部交付完成</div>
+    <p class="result-msg">网盘已分享，各方案文案保存在任务目录 copy/ 下。钥匙（如导出）只在本地，请自行交付，不会自动上传。</p>
+    ${cleanupNote(result.task)}<div class="mini-files">${rows}</div>
+    <div class="run-actions" style="margin-top:14px"><button class="btn btn-primary btn-block" data-open="${esc(dir ? dir + "/copy" : "")}">${icon("folder")}打开文案目录</button><button class="btn btn-block" data-newrun>${icon("plus")}新建任务</button></div></div>`;
+}
+/* 文案还原页 */
+function textRestoreProblems(st) {
+  const m = [];
+  if (st.kind === "text" && !st.text) m.push("粘贴文案或已提取的文字");
+  if (st.kind === "video" && !st.video) m.push("选择本地视频");
+  if (!st.manual && !st.keyFile) m.push("添加 .tkey 文案还原钥匙，或改用手动配方");
+  if (st.manual) { try { const r = JSON.parse(st.recipeJson || ""); if (!r || typeof r !== "object" || Array.isArray(r)) throw 0; } catch (_) { m.push("手动配方须为一份 JSON 方案"); } }
+  return m;
+}
+function manualSlots(st) {
+  try { const r = JSON.parse(st.recipeJson || ""); return [...(r.layers || []), r.carrier || {}].map((x) => x.secret_slot).filter(Boolean); } catch (_) { return []; }
+}
+function textRestorePayload(st) {
+  const cfg = { secrets: Object.assign({}, st.secrets) };
+  if (st.kind === "video") cfg.video = st.video; else cfg.text = st.text;
+  if (st.manual) cfg.recipe = JSON.parse(st.recipeJson); else cfg.key_file = st.keyFile;
+  if (st.out) cfg.output_dir = st.out;
+  return cfg;
+}
+function renderTextRestore() {
+  const st = S.textrestore, el = mount("textrestore", "textrestore"); if (!el) return;
+  const isVideo = st.kind === "video";
+  const slots = st.manual ? manualSlots(st) : [];
+  el.innerHTML = `<div class="seg" role="tablist"><button class="${isVideo ? "" : "on"}" data-trkind="text">文字 / 已提取文字</button><button class="${isVideo ? "on" : ""}" data-trkind="video">本地帧语视频</button></div>
+    ${isVideo ? `<div class="callout warn">${icon("info")}<span>密送会自动操作帧语官网提取并解锁外层视频（<b>需联网</b>，只把视频密码交给官网），内层文字在本机解开。不支持离线视频解码；B 站链接请自行在官网打开后把文字粘贴到“文字”入口。</span></div>
+      <div class="field"><span>视频文件</span><div class="row" style="gap:6px"><input class="input" readonly value="${esc(st.video)}" placeholder="未选择"><button class="btn btn-sm" data-trpick="video">选择</button></div></div>`
+      : `<label class="field"><span>文案（逐字保留，不自动去空格）</span><textarea class="input" rows="6" data-trtext spellcheck="false">${esc(st.text)}</textarea></label><p class="hint">纯文字还原在本机离线完成。</p>`}
+    <div class="seg" role="tablist" style="margin-top:12px"><button class="${st.manual ? "" : "on"}" data-trmanual="0">使用 .tkey 钥匙</button><button class="${st.manual ? "on" : ""}" data-trmanual="1">手动配方</button></div>
+    ${st.manual ? `<label class="field"><span>方案 JSON（公开配方，不含密码）</span><textarea class="input mono" rows="5" data-trrecipe spellcheck="false">${esc(st.recipeJson)}</textarea><small>手动还原没有原文摘要保证。</small></label>
+      ${slots.map((s) => `<label class="field"><span>密钥 · ${esc(s)}</span><input class="input" type="password" autocomplete="off" data-trsecret="${esc(s)}" value="${esc(st.secrets[s] || "")}"></label>`).join("")}`
+      : `<div class="field"><span>文案还原钥匙</span><div class="row" style="gap:6px"><input class="input" readonly value="${esc(st.keyFile)}" placeholder="选择 .tkey"><button class="btn btn-sm" data-trpick="key">选择</button></div><small>钥匙已包含所需密钥，持有钥匙即可还原。</small></div>`}
+    <div class="row" style="gap:8px;margin:12px 0;flex-wrap:wrap"><button class="btn" data-trpick="out">选择输出目录</button><span class="muted">${esc(st.out || "默认：产物目录")}</span><span class="grow"></span><button class="btn btn-ghost" data-trclear>清空</button></div>`;
+  paintIcons(el);
+  const redraw = () => { renderTextRestore(); runPanel("textrestore"); };
+  $$("[data-trkind]", el).forEach((b) => b.addEventListener("click", () => { st.kind = b.dataset.trkind; st.result = null; redraw(); }));
+  $$("[data-trmanual]", el).forEach((b) => b.addEventListener("click", () => { st.manual = b.dataset.trmanual === "1"; st.secrets = {}; redraw(); }));
+  const ta = $("[data-trtext]", el); if (ta) { ta.addEventListener("input", () => { st.text = ta.value; }); ta.addEventListener("change", () => runPanel("textrestore")); }
+  const rj = $("[data-trrecipe]", el); if (rj) rj.addEventListener("change", () => { st.recipeJson = rj.value; redraw(); });
+  $$("[data-trsecret]", el).forEach((i) => i.addEventListener("input", () => { if (i.value) st.secrets[i.dataset.trsecret] = i.value; else delete st.secrets[i.dataset.trsecret]; }));
+  $$("[data-trpick]", el).forEach((b) => b.addEventListener("click", async () => {
+    try {
+      const kind = b.dataset.trpick;
+      const paths = kind === "out" ? await call("pick_folder") : await call("pick_files", false, kind === "video");
+      if (!paths || !paths.length) return;
+      if (kind === "out") st.out = paths[0];
+      else if (kind === "video") st.video = paths[0];
+      else { if (!/\.tkey$/i.test(paths[0])) return toast("请选择 .tkey 文案还原钥匙", "warn"); st.keyFile = paths[0]; }
+      redraw();
+    } catch (e) { toast(e.message, "err"); }
+  }));
+  $("[data-trclear]", el).addEventListener("click", () => { Object.assign(st, { text: "", video: "", keyFile: "", recipeJson: "", secrets: {}, out: "", result: null }); redraw(); });
+}
+function textRestoreSummary(st, miss, busy, dis) {
+  return `<div class="run"><h3>还原文案</h3><p class="hint">${st.kind === "video" ? "视频外层经官网联网提取，内层在本机解开。" : "纯文字在本机离线还原。"}摘要不符时停止，不交付部分结果。</p>${missingNote(miss)}${busyNote(busy)}<button class="btn btn-primary btn-lg btn-block" data-run="go" ${dis}>${icon("wand")}开始还原</button><p class="run-note">原文写入新的 .txt 文件，不覆盖已有文件；密钥不保存。</p></div>`;
+}
+function textRestoreResult(result) {
+  const dir = String(result.out || "").replace(/[\\/][^\\/]*$/, "");
+  return `<div class="result-card success"><div class="result-title"><span class="ok-ic">${icon("check")}</span>文案还原完成</div>
+    <p class="result-msg">${result.verified ? "已与钥匙中的原文摘要核对一致。" : "手动配方还原，没有原文摘要可核对。"}</p>
+    <div class="mini-files"><div class="mini-file"><span>${esc(baseName(result.out || ""))}</span></div></div>
+    <div class="run-actions"><button class="btn btn-primary btn-block" data-open="${esc(dir)}">${icon("folder")}打开所在目录</button><button class="btn btn-block" data-newrun>还原其他文案</button></div></div>`;
+}
+
 function initPage(page) {
   const st = S[page];
   if ((page === "pipeline" || page === "pack") && !st.layers.length) st.layers = DEFAULT_LAYERS();
@@ -1236,7 +1520,8 @@ function bindShell() {
     const p = S.page; const d = S._drop; S._drop = null;
     if (!paths || !paths.length) return;
     if (d && d.kind === "video" && Date.now() - d.t < 8000 && (p === "pipeline" || p === "pack")) { setVideo(p, paths.find(isVideo) || paths[0], d.layer); return; }
-    if (p === "pipeline" || p === "pack") {
+    if (p === "restore") { addRestorePaths(paths).catch(e => toast(e.message, "err")); }
+    else if (p === "pipeline" || p === "pack") {
       addPaths(S[p].inputs, paths, false).then(() => { rerender(p); if (p === "pipeline" && (S.pipeline._step || 1) !== 1) toast("已添加到第 1 步「选择资源」", "ok"); });
     }
     else if (p === "upload") { addPaths(S.upload.files, paths, true).then(() => rerender("upload")); }
@@ -1256,6 +1541,7 @@ function bindShell() {
 async function boot() {
   paintIcons(document);
   bindShell();
+  $$(".nav-item").forEach(b => { b.disabled = true; });
   try { S.meta = await call("bootstrap"); }
   catch (e) { toast("后端连接失败：" + e.message, "err"); return; }
   applySettings(S.meta.settings);
@@ -1265,6 +1551,7 @@ async function boot() {
   await loadAccounts();
   await loadTasks();
   go("pipeline");
+  $$(".nav-item").forEach(b => { b.disabled = false; });
   poll();
 }
 

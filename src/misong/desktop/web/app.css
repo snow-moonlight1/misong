@@ -523,3 +523,28 @@ details.more.adv .more-body { padding-top: 12px; }
 [data-mount="packopts"] .hint { margin-top: 6px; }
 .run .callout { margin: 0 0 12px; }
 @media (max-width: 1000px) { .split { grid-template-columns: minmax(0,1fr); } .side { position: static; } }
+
+/* ---- v0.2 第四步交付方案 & 文案还原 ---- */
+.row { display: flex; align-items: center; }
+.row .grow, .recipe .grow, .tlayer .grow { flex: 1; }
+.chk { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.chk input { accent-color: var(--accent); margin: 0; }
+.chk.disabled { opacity: .5; cursor: not-allowed; }
+.mono { font-family: var(--mono); }
+textarea.input { height: auto; padding: 8px 11px; resize: vertical; line-height: 1.5; }
+.recipes { display: grid; gap: 12px; margin-top: 12px; }
+.recipe { border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px; background: var(--surface); display: grid; gap: 10px; min-width: 0; }
+.recipe-head { display: flex; gap: 8px; align-items: center; }
+.recipe-head .input { max-width: 260px; font-weight: 600; }
+.tl-chain { display: grid; gap: 6px; }
+.tlayer { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 8px; border-radius: var(--radius); background: var(--bg); border: 1px solid var(--border); min-width: 0; }
+.tlayer .select { width: auto; min-width: 150px; }
+.tlayer .input { width: 200px; max-width: 100%; }
+.tlayer.origin b { font-weight: 600; font-size: 13px; }
+.tl-idx { width: 22px; height: 22px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 12px; background: var(--surface-2); color: var(--muted); flex: none; }
+.tl-chars { font-style: normal; font-size: 12px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.carrier { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.carrier-label { font-size: 13px; font-weight: 600; }
+.key-export { padding-top: 8px; border-top: 1px dashed var(--border-strong); line-height: 1.5; }
+[data-mount="schemes"] > .seg, [data-mount="textrestore"] > .seg { margin-bottom: 12px; flex-wrap: wrap; }
+@media (max-width: 760px) { .recipe-head { flex-wrap: wrap; } .recipe .grid2 { grid-template-columns: 1fr; } .tlayer .input { width: 100%; } }
