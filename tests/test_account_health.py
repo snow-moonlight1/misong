@@ -144,6 +144,32 @@ def test_baidu_login_redirect_is_observed_without_waiting_for_owner():
     browser_scenario(scenario)
 
 
+def test_quark_mobile_and_wechat_login_prompts_are_logged_out():
+    async def scenario(browser):
+        runtime = RoutedRuntime(browser, '<button>手机登录</button><button>微信登录</button>')
+        result = await AccountHealth(runtime).check_login("quark", timeout=2)
+        assert result.status == "logged_out" and result.code == "login_required"
+    browser_scenario(scenario)
+
+
+def test_123pan_login_redirect_host_is_logged_out():
+    async def scenario(browser):
+        page = await browser.new_page()
+        await page.route("**/*", lambda route: route.fulfill(body='<button>扫码登录</button>', content_type="text/html; charset=utf-8"))
+        await page.goto("https://user.123pan.cn/centerlogin")
+        result = await REGISTRY["123pan"]().check_login(page, timeout=.5)
+        assert result.status == "logged_out" and result.code == "login_required"
+    browser_scenario(scenario)
+
+
+def test_baidu_anonymous_scaffold_with_login_gate_is_logged_out():
+    async def scenario(browser):
+        runtime = RoutedRuntime(browser, AUTH["baidu"] + '<button>去登录</button>')
+        result = await AccountHealth(runtime).check_login("baidu", timeout=2)
+        assert result.status == "logged_out" and result.code == "login_required"
+    browser_scenario(scenario)
+
+
 def test_batch_all_and_single_headed_retry_are_bounded_and_do_not_change_runtime(monkeypatch):
     runtime = SimpleNamespace(headless=True, cancel=None)
     service = AccountHealth(runtime)
@@ -257,8 +283,17 @@ def test_inspection_uses_synthetic_snapshot_and_never_rewrites_it(tmp_path, monk
 def test_conflicting_scaffold_and_login_prompt_does_not_claim_authenticated():
     async def scenario(browser):
         runtime = RoutedRuntime(browser, AUTH["quark"] + '<button>扫码登录</button>')
-        result = await AccountHealth(runtime).check_login("quark", timeout=2)
+        result = await AccountHealth(runtime).check_login("quark", timeout=5)
         assert result.status == "unknown" and result.code == "conflicting_login_signals"
+    browser_scenario(scenario)
+
+
+def test_transient_login_prompt_over_authenticated_shell_resolves_logged_in():
+    async def scenario(browser):
+        runtime = RoutedRuntime(browser, AUTH["quark"] + '<button id=gate>扫码登录</button>'
+                                '<script>setTimeout(()=>document.getElementById("gate").remove(),300)</script>')
+        result = await AccountHealth(runtime).check_login("quark", timeout=3)
+        assert result.status == "logged_in" and result.code == "authenticated_marker"
     browser_scenario(scenario)
 
 

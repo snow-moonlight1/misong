@@ -64,11 +64,38 @@ def test_overlay_remains_and_no_input_click_create_or_share_is_triggered():
             await page.goto(driver.profile["url"])
             report = await driver.selfcheck(page, timeout=2)
             assert report.status == "failed"
-            assert next(c for c in report.items if c.item == "new_folder").status == "covered"
-            assert next(c for c in report.items if c.item == "share").status == "covered"
+            assert next(c for c in report.items if c.item == "new_folder").status == "covered_overlay"
+            assert next(c for c in report.items if c.item == "share").status == "covered_overlay"
             assert await page.locator("#overlay").count() == 1
             assert await page.evaluate("window.writes") == 0
             assert await page.locator("input[type=file]").evaluate("e=>e.files.length") == 0
+    browser_scenario(scenario)
+
+
+def test_plain_layout_overlap_is_covered_without_blaming_a_popup():
+    async def scenario(browser):
+        runtime = RoutedRuntime(browser, page_for("quark") +
+                                '<div id=blocker style="position:absolute;left:0;top:0;width:100%;height:100%;background:#eee">notice</div>')
+        async with runtime.open_inspection("quark") as (driver, page):
+            await page.goto(driver.profile["url"])
+            report = await driver.selfcheck(page, timeout=2)
+            assert next(c for c in report.items if c.item == "new_folder").status == "covered"
+            assert await page.evaluate("window.writes") == 0
+    browser_scenario(scenario)
+
+
+def test_label_span_inside_wrapping_button_is_not_covered():
+    async def scenario(browser):
+        body = (AUTH["quark"] + '<button class="btn-create-folder"><span>新建文件夹</span></button>'
+                '<button>分享</button><input type=file hidden>'
+                '<script>window.writes=0;document.addEventListener("click",()=>window.writes++);'
+                'document.addEventListener("change",()=>window.writes++);</script>')
+        runtime = RoutedRuntime(browser, body)
+        async with runtime.open_inspection("quark") as (driver, page):
+            await page.goto(driver.profile["url"])
+            report = await driver.selfcheck(page, timeout=2)
+            assert next(c for c in report.items if c.item == "new_folder").status == "passed"
+            assert await page.evaluate("window.writes") == 0
     browser_scenario(scenario)
 
 

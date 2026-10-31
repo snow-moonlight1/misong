@@ -29,7 +29,7 @@
 
 ## 功能
 
-- **还原钥匙与一键还原（0.2 开发中）**：打包时可导出 `.mskey`，接收方拖入产物和钥匙，自动校验、合卷并解开全部处理层。
+- **还原钥匙与一键还原**：打包时可导出 `.mskey`，接收方拖入产物和钥匙，自动校验、合卷并解开全部处理层。
 - **多层嵌套打包**：7z（AES-256，可加密文件名）、ZIP（AES）、lz4 / zstd / brotli / xz / bz2 / tar 等，任意顺序叠加。
 - **门面视频**：把 7z/ZIP 嵌入普通 MP4 开头，视频照常播放，归档软件可直接解出；支持 >4GB（co64 / ZIP64）。
 - **分卷**：`.001/.002` 字节分卷并附校验清单，可选标准 `.sha256`。
@@ -101,9 +101,15 @@ $layers = '[{"type":"archive","fmt":"zip"},{"type":"cover","video":"C:/media/int
 | `share-import` | 手动上传后回填分享文本；换链时重建下游指引 |
 | `nest` / `unest` | 多层打包 / 按清单还原 |
 | `unwrap` | 无清单时按文件特征逐层剥离（`--chain-pwd` 提供各归档层密码） |
-| `restore` | 使用 `.mskey` 还原钥匙自动校验、合卷和逐层解包（0.2 开发中） |
-| `doctor` | 只读环境检查；`--json` 输出脱敏报告（0.2 开发中） |
-| `data-migrate` | 显式复制旧数据目录，保留源数据，拒绝冲突（0.2 开发中） |
+| `restore` | 使用 `.mskey` 还原钥匙自动校验、合卷和逐层解包 |
+| `text-deliver` | 按有序方案生成文字/帧语视频，可显式导出 `.tkey` |
+| `text-restore` | 按 `.tkey` 或手动配方还原文字/本地视频 |
+| `doctor` | 只读环境检查；`--json` 输出脱敏报告 |
+| `account` | 网盘登录、状态；`account check` 单盘/批量登录与发布前预检 |
+| `selfcheck` | 只读检查网盘关键选择器，不上传或分享 |
+| `diag` | 导出白名单诊断包，默认不含截图或会话 |
+| `template` | 导入/导出公开设置模板，不保存密码 |
+| `data-migrate` | 显式复制旧数据目录，保留源数据，拒绝冲突 |
 | `split` / `join` | 字节分卷 / 校验并合卷 |
 | `merge` | 旧版尾部拼接（保留兼容） |
 | `code` | 链接文本编解码：beast · mojibake · hajimi · base64 等 |
@@ -124,7 +130,7 @@ $layers = '[{"type":"archive","fmt":"zip"},{"type":"cover","video":"C:/media/int
 - [使用指南](docs/user-guide.md)：桌面应用、发布、中转、续跑与回填
 - [接收方指南](docs/receiver-guide.md)：解码文案、下载与还原
 - [支持情况与验证状态](docs/status.md)：各网盘验收范围、已知限制、待验证项
-- [路线图](docs/roadmap.md)：源码已准备为 0.2.0；有序文案、钥匙、帧语官网 RPA、账号自检、诊断和模板入口已集成，发布验证见[验收记录](docs/releases/0.2.0.md)
+- [路线图](docs/roadmap.md)：已发布 0.2.0；有序文案、钥匙、帧语官网 RPA、账号自检、诊断和模板入口已集成，发布验证见[验收记录](docs/releases/0.2.0.md)
 - [v0.2 文案与视频执行计划](docs/plans/2026-10-29-text-pipeline/README.md)：当前 RPA 分阶段任务，以及保留供后续使用的两份净室提示词
 - [开发指南](docs/dev/development.md)：环境、结构、测试、驱动约定
 - [智能体 Skill](skills/misong/SKILL.md)：命令使用、已有授权与凭据边界

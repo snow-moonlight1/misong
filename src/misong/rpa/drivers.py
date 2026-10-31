@@ -138,6 +138,7 @@ PROFILES = {
     "123pan": {
         "url": "https://yun.123pan.cn/", "hosts": list(HOSTS["123pan"]),
         "persistent": True, "session_storage": True,
+        "login_hosts": ("user.123pan.cn",),
         "promotion_close": "button[class*='splashScreenModal__close_']",
         "logged_in": "[class*='totalUsageText_']",
         "logged_in_pattern": r"\d+(?:\.\d+)?[KMGT]?B\s*/\s*\d+(?:\.\d+)?[KMGT]?B",
@@ -153,6 +154,7 @@ PROFILES = {
     "baidu": {
         "url": "https://pan.baidu.com/disk/main", "hosts": list(HOSTS["baidu"]),
         "persistent": True, "enter": "去登录",
+        "login_hosts": ("passport.baidu.com",), "logged_out_text": "去登录",
         "logged_in": ".wp-s-aside-nav", "login_user": ".nd-user-info",
         "login_hint": "百度网盘请在软件窗口扫码登录；登录态只保存在本机专用配置中。",
         "rows": ".wp-s-pan-table__body-row", "row_name": "a.list-name-text",
@@ -302,9 +304,12 @@ class BrowserDiskDriver(DiskDriver):
         entry = urlsplit(self.profile["url"])
         hosts = {str(h).lower().removeprefix("www.")
                  for h in [entry.hostname, *self.profile.get("hosts", [])] if h}
+        login_hosts = {str(h).lower().removeprefix("www.")
+                       for h in self.profile.get("login_hosts", ()) if h}
         host = (url.hostname or "").lower().removeprefix("www.")
-        if (self.name == "baidu" and host == "passport.baidu.com" and url.scheme == "https"
-                and not url.username and not url.password and url.port in (None, 443)):
+        secure_origin = (url.scheme == "https" and not url.username
+                         and not url.password and url.port in (None, 443))
+        if secure_origin and host in login_hosts:
             first_party = True
             login_redirect = True
         else:
@@ -335,13 +340,22 @@ class BrowserDiskDriver(DiskDriver):
         if invalid and await self._health_visible(page.get_by_text(invalid, exact=True)):
             return LoginCheck("logged_out", "session_expired")
         prompt = await self._health_visible(page.get_by_text(re.compile(
-                r"^(?:登录|去登录|立即登录|请先登录|扫码登录|二维码登录|账号登录|帐号登录|密码登录|短信登录|登录已失效|登录已过期|请重新登录)$")))
+                r"^(?:登录|去登录|立即登录|请先登录|扫码登录|二维码登录|账号登录|帐号登录|密码登录|短信登录|手机登录|微信登录|登录已失效|登录已过期|请重新登录)$")))
+        gate = False
+        if self.profile.get("logged_out_text"):
+            gate = bool(await self._health_visible(
+                page.get_by_text(self.profile["logged_out_text"], exact=True)))
+            prompt = prompt or gate
         if self.profile.get("logged_out"):
             prompt = prompt or await self._health_visible(page.locator(self.profile["logged_out"]))
         if login_redirect:
             return LoginCheck("logged_out", "login_required")
         authenticated = await self.is_logged_in(page)
         if authenticated and prompt:
+            # An explicit sign-in gate wins over UI scaffolding that also renders
+            # for anonymous visitors; other mixed signals stay unknown.
+            if gate:
+                return LoginCheck("logged_out", "login_required")
             return LoginCheck("unknown", "conflicting_login_signals")
         if authenticated:
             return LoginCheck("logged_in", "authenticated_marker")
@@ -350,10 +364,24 @@ class BrowserDiskDriver(DiskDriver):
         return None
 
     async def check_login(self, page, *, timeout=10):
+        last_conflict = None
+        conflict_since = None
         async def observe():
+            nonlocal last_conflict, conflict_since
             while True:
                 result = await self._login_observation(page)
                 if result is not None:
+                    if result.code == "conflicting_login_signals":
+                        # SPA hydration can briefly show a login prompt over an
+                        # authenticated shell; keep observing until it resolves.
+                        if conflict_since is None:
+                            conflict_since = time.monotonic()
+                        last_conflict = result
+                        if time.monotonic() - conflict_since >= 3:
+                            return result
+                        await asyncio.sleep(.3)
+                        continue
+                    conflict_since = None
                     return result
                 await asyncio.sleep(.1)
         try:
@@ -361,6 +389,8 @@ class BrowserDiskDriver(DiskDriver):
         except CheckCancelled:
             return LoginCheck("cancelled", "cancelled")
         except TimeoutError:
+            if last_conflict is not None:
+                return last_conflict
             # Missing auth markers can mean a changed SPA or a stalled request, not expiry.
             return LoginCheck("timeout", "login_markers_missing")
 
@@ -383,6 +413,9 @@ class BrowserDiskDriver(DiskDriver):
     async def selfcheck(self, page, *, timeout=10):
         results = []
         current = None
+        # Baidu renders dozens of toolbar candidates; one second is too short for
+        # the per-element hit tests even though the page is otherwise responsive.
+        page.set_default_timeout(3000)
         async def inspect():
             nonlocal current
             from playwright.async_api import Error as PlaywrightError
@@ -411,14 +444,25 @@ class BrowserDiskDriver(DiskDriver):
                             status = "ambiguous"
                         elif not await element.is_enabled():
                             status = "not_observed" if conditional else "disabled"
-                        elif not await element.evaluate("""el => {
-                            const r=el.getBoundingClientRect();
-                            const hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);
-                            return hit===el || el.contains(hit);
-                        }"""):
-                            status = "covered"
                         else:
-                            status = "passed"
+                            # Distinguish a floating promotion/banner from a genuine
+                            # layout overlap so covered entries stay actionable.
+                            status = await element.evaluate("""el => {
+                                const r=el.getBoundingClientRect();
+                                const hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);
+                                if (!hit) return "covered";
+                                // Icon/label spans commonly sit inside the real button;
+                                // hitting that wrapping control is not an obstruction.
+                                if (hit===el || el.contains(hit) || hit.contains(el)) return "passed";
+                                let node=hit;
+                                for (let i=0; node && i<8; i+=1, node=node.parentElement) {
+                                    const style=getComputedStyle(node);
+                                    if (style.position==="fixed" || style.position==="sticky") return "covered_overlay";
+                                    const label=((node.id||"")+" "+(typeof node.className==="string"?node.className:"")).toLowerCase();
+                                    if (/(?:modal|popup|dialog|banner|promo|coupon|splash|notice|mask|overlay|advert)/.test(label)) return "covered_overlay";
+                                }
+                                return "covered";
+                            }""")
                 except PlaywrightError:
                     # Do not return Playwright errors: they can contain URLs/DOM/credentials.
                     status = "selector_error"

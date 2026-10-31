@@ -62,6 +62,8 @@ HTTP 401/403/429 仅在页面有明确人工验证证据时归为 `verification_
 两次共享每盘 timeout 预算，首次最多分配一半；有头重试仍不进入扫码/绑定等待，不自动输入或点击登录。
 `headless=False` 的 runtime 只检查一次。调用期间不修改原 runtime 的配置。
 
+`login_hosts` 中的第一方登录子域在 HTTPS、无凭据且端口为 443/默认时按登录跳转处理；`logged_out_text` 是显式登录门禁，优先于匿名页也会渲染的页面骨架。已登录标记与通用登录提示同时可见时，检查会继续观察最多 3 秒，仍冲突才返回 `unknown`。
+
 ## 发布前预检
 
 ```python
@@ -109,7 +111,8 @@ item 指向有效 profile 的同名配置；`share` 对应 `share_trigger`（如
 | `passed` | 输入存在，或可见入口可用且中心点未被遮挡 |
 | `missing / hidden / disabled` | 必需入口缺失、隐藏或禁用 |
 | `not_configured` | 必需的选择器配置缺失或为空 |
-| `covered` | 可见入口被页面遮罩覆盖；不移除遮罩、不强制点击 |
+| `covered` | 可见入口被同层布局遮挡；不移除遮挡、不强制点击 |
+| `covered_overlay` | 可见入口被固定/浮动的公告、弹窗或促销横幅遮挡；与选择器失效区分 |
 | `ambiguous` | 精确文案同时匹配多个可见入口，实际驱动不能唯一选择 |
 | `selector_error` | 选择器执行错误；包括人为损坏的 CSS，不返回原始 Playwright 异常 |
 | `not_observed` | 分享或菜单子项依赖选中/展开，当前未呈现或未启用；不能计作成功 |
