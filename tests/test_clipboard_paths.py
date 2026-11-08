@@ -89,12 +89,16 @@ def test_file_actions_do_not_squeeze_drop_instructions(tmp_path, width):
             page.get_by_role('button', name=module, exact=True).click()
             zone = page.locator('.page.active .drop').first
             title = zone.locator('.drop-text b').bounding_box()
+            text = zone.locator('.drop-text').bounding_box()
             bounds = zone.bounding_box()
             assert title['width'] >= 180
             assert title['height'] < 65, (module, width, title)
+            assert bounds['height'] <= 120, (module, width, bounds)
             for button in zone.locator('button').all():
                 button_bounds = button.bounding_box()
                 assert bounds['x'] <= button_bounds['x']
                 assert button_bounds['x'] + button_bounds['width'] <= bounds['x'] + bounds['width']
-                assert button_bounds['y'] >= title['y'] + title['height']
+                beside = button_bounds['x'] >= text['x'] + text['width']
+                below = button_bounds['y'] >= text['y'] + text['height']
+                assert beside or below, (module, width, button_bounds, text)
         browser.close()

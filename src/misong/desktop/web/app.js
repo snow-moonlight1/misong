@@ -477,7 +477,7 @@ function namingMount(page, state) {
 }
 function renderFilesMount(page, state, key, filesOnly) {
   const el = mount(page, "files"); if (!el) return;
-  el.innerHTML = dropzone(page + "-" + key, filesOnly ? "拖入文件，或点击选择" : "拖入文件 / 文件夹，或点击选择",
+  el.innerHTML = dropzone(page + "-" + key, filesOnly ? "拖入文件" : "拖入文件或文件夹",
     filesOnly ? "文件夹会展开为其中的文件" : "支持多选，名称不能重复", items(state, key).length > 0) + fileList(items(state, key), true) + (page === "upload" ? `<div class="sub"><label class="check"><input type="checkbox" data-uploadchecksum ${state.checksum ? "checked" : ""}>附带校验文件（SHA-256）</label><p class="hint">清单与还原说明会自动排除。</p></div>` : "");
   paintIcons(el);
   const uc = $("[data-uploadchecksum]", el); if (uc) uc.addEventListener("change", () => { state.checksum = uc.checked; runPanel(page); });
@@ -956,7 +956,7 @@ async function addRestorePaths(paths) {
 }
 function renderRestore() {
   const st = S.restore, el = mount("restore", "restorefiles");
-  el.innerHTML = `${dropzone("restore", "拖入压缩包、分卷文件夹和 .mskey", "两个文件也可以一起拖入", false)}
+  el.innerHTML = `${dropzone("restore", "拖入压缩包或分卷文件夹", "还原钥匙 .mskey 可以一起拖入", false)}
     <div class="row" style="gap:8px;margin:12px 0;flex-wrap:wrap"><button class="btn" data-restorepick="out">选择还原目录</button><button class="btn btn-ghost" data-restoreclear>清空</button></div>
     <dl class="summary"><div><dt>下载资源</dt><dd>${st.inputs.length ? st.inputs.map(f => esc(f.name)).join("、") : "未选择"}</dd></div><div><dt>还原钥匙</dt><dd>${st.keyFile ? esc(st.keyFile.name) : "未选择 .mskey"}</dd></div><div><dt>还原目录</dt><dd>${esc(st.out || "自动创建新的还原目录")}</dd></div></dl>`;
   paintIcons(el);
