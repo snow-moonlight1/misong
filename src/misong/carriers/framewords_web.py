@@ -63,8 +63,22 @@ class FramewordsWebCarrier:
     @asynccontextmanager
     async def _page(self):
         if self._page_factory is not None:
-            async with self._page_factory() as page:
+            factory = self._page_factory()
+            page = await factory.__aenter__()
+            try:
                 yield page
+            finally:
+                # A cancelled operation must still let the factory close its page
+                # and browser. Exiting inline can be interrupted by the same
+                # cancellation, so run the exit on its own task and shield it.
+                async def cleanup():
+                    await factory.__aexit__(None, None, None)
+                closing = asyncio.create_task(cleanup())
+                try:
+                    await asyncio.shield(closing)
+                except asyncio.CancelledError:
+                    await asyncio.shield(closing)
+                    raise
             return
         # Driver-level debug logging can print fill arguments before our error
         # boundary can redact them. Refuse it rather than mutate process-global
