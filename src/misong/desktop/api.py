@@ -489,19 +489,63 @@ class Api:
         return result
 
     @_safe
-    def export_diagnostics(self, path, tasks=None, screenshots=None, log_lines=None):
+    def export_task_template(self, folder, path):
+        """Export one task's public packing config as a single-template file."""
+        from ..templates import export_file, validate_template
+        folder = self._managed(folder)
+        task = self._task_at(folder)
+        settings = (task or {}).get("settings") or {}
+        layers = settings.get("layers") or []
+        if task is None or task["kind"] == "upload" or not layers:
+            raise ValueError("该任务没有打包层配置，无法导出模板")
+        name = str(task.get("title") or folder.name).strip()[:24].strip() or "任务模板"
+        item = {"name": name, "layers": layers,
+                "disguise": settings.get("disguise", ""), "size": settings.get("size", ""),
+                "options": {k: settings[k] for k in ("raw_merge", "checksum") if isinstance(settings.get(k), bool)}}
+        plan = folder / "relay-plan.json"
+        if plan.exists():
+            try:
+                recipes = json.loads(plan.read_text(encoding="utf-8")).get("text_recipes") or []
+            except (OSError, ValueError):
+                recipes = []
+            if recipes:
+                item["text_recipes"] = recipes
+        return export_file([validate_template(item, strict=False)], path)
+
+    @_safe
+    def template_from_paths(self, paths):
+        """Read dropped template files: one template is returned for direct apply,
+        several are stored as quick templates (renaming conflicts)."""
+        from ..templates import merge, read_file
+        paths = [str(p) for p in paths or []]
+        if not paths:
+            raise ValueError("没有模板文件")
+        incoming = []
+        for path in paths:
+            incoming.extend(read_file(path))
+        if len(incoming) == 1:
+            return {"templates": incoming, "saved": None}
+        if self._job is not None:
+            raise ValueError("请先暂停任务再导入模板")
+        result = merge(self._load_templates(), incoming)
+        self._save_templates(result["templates"])
+        return {"templates": incoming, "saved": result}
+
+    @_safe
+    def export_diagnostics(self, path, tasks=None, log_lines=None):
         from ..diagnostics import export_diagnostics
         from ..eventlog import recent
         folders = [self._managed(folder) for folder in tasks or []]
         return export_diagnostics(path, tasks=folders, state_dir=self._state,
-                                  screenshots=screenshots or (), log_lines=[*recent(self._state), *(log_lines or ())])
+                                  screenshots=(), log_lines=[*recent(self._state), *(log_lines or ())])
 
     @_safe
     def pick_save_file(self, kind="diagnostics"):
         import webview
-        if kind not in ("diagnostics", "templates"):
+        if kind not in ("diagnostics", "templates", "task-template"):
             raise ValueError("保存类型无效")
-        name = ("misong-diagnostics.zip" if kind == "diagnostics" else "misong-templates.json")
+        name = {"diagnostics": "misong-diagnostics.zip", "templates": "misong-templates.json",
+                "task-template": "misong-task-template.json"}[kind]
         chosen = self._window.create_file_dialog(webview.FileDialog.SAVE, save_filename=name)
         return str(chosen[0]) if isinstance(chosen, (list, tuple)) and chosen else str(chosen or "")
 
@@ -1104,8 +1148,8 @@ class Api:
     def accounts(self):
         """One owner-facing state per disk, derived from the login session and the driver history.
 
-        ``state``: none (未登录) · loggedin (已登录 · 未测试) · tested (已通过测试) ·
-        expired (登录失效) · neterr (检测失败：网络). A later 检测登录 never downgrades ``tested``.
+        ``state``: none (未登录) · loggedin (已登录) · tested (曾通过测试) ·
+        expired (登录失效) · neterr (检查失败：网络). A later 检查登录 never downgrades ``tested``.
         """
         result = []
         history = self._history_verified()
@@ -1186,7 +1230,7 @@ class Api:
             save_json(self._state / "selfchecks" / (disk + ".json"),
                       {**report.to_dict(), "checked_at": datetime.now().isoformat(timespec="seconds")})
             return {"selfcheck": report.to_dict()}
-        return self._start("account", "只读驱动自检", work)
+        return self._start("account", "检查网页适配", work)
 
     @_safe
     def account_action(self, disk, op, browser=None):
@@ -1199,4 +1243,4 @@ class Api:
                                      browser_channel=browser or None)
             asyncio.run(getattr(runtime, op)(disk))
             return {"disk": disk, "op": op}
-        return self._start("account", ("登录 " if op == "login" else "检测登录 ") + label, work)
+        return self._start("account", ("登录 " if op == "login" else "检查登录 ") + label, work)

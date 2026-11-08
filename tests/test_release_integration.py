@@ -84,6 +84,51 @@ def test_template_import_rename_export_preserves_options_and_recipes(tmp_path):
     assert next(t for t in restored if t["name"] == "改名模板")["text_recipes"] == item["text_recipes"]
 
 
+def test_task_template_export_and_drop_roundtrip(tmp_path):
+    from misong import workflows
+    runs = tmp_path / "runs"
+    api = Api(runs, tmp_path / "state")
+    folder = runs / "task"
+    folder.mkdir(parents=True)
+    path, plan = make_plan(folder)
+    # A hand-edited legacy settings block may still carry a password; export must drop it.
+    layers = [{"type": "archive", "fmt": "7z", "locked": True, "header_enc": True, "password": "never-exported"},
+              {"type": "split", "size": "1900MB"}]
+    workflows.write_meta(folder, "pipeline", "任务标题", settings={
+        "layers": layers, "disguise": ".mp4", "size": "", "raw_merge": True, "checksum": True, "layers_version": 2})
+    dest = tmp_path / "task-template.json"
+    result = api.export_task_template(str(folder), str(dest))
+    assert result["ok"], result
+    item = json.loads(dest.read_text(encoding="utf-8"))["templates"][0]
+    assert item["name"] == "任务标题" and item["disguise"] == ".mp4"
+    assert item["options"] == {"raw_merge": True, "checksum": True}
+    assert item["text_recipes"] == plan["text_recipes"]
+    assert "never-exported" not in dest.read_text(encoding="utf-8")
+    assert [l.get("type", "archive") for l in item["layers"]] == ["archive", "split"]
+    # one dropped template is returned for direct apply and stores nothing
+    before = api.templates()["data"]
+    dropped = api.template_from_paths([str(dest)])
+    assert dropped["ok"], dropped
+    assert dropped["data"]["saved"] is None
+    assert dropped["data"]["templates"] == [item]
+    assert api.templates()["data"] == before
+    # several dropped templates become quick templates, renaming conflicts
+    second = tmp_path / "second.json"
+    assert templates.export_file([{"name": "任务标题", "layers": [{"fmt": "zip", "locked": False, "header_enc": True}]}], second)["count"] == 1
+    multi = api.template_from_paths([str(dest), str(second)])
+    assert multi["ok"], multi
+    assert multi["data"]["saved"]["renamed"] == [{"from": "任务标题", "to": "任务标题 (2)"}]
+    names = [t["name"] for t in api.templates()["data"]]
+    assert "任务标题" in names and "任务标题 (2)" in names
+    # never overwrites an existing file; refuses tasks without packing layers
+    assert not api.export_task_template(str(folder), str(dest))["ok"]
+    upload = runs / "upload-only"
+    upload.mkdir()
+    make_plan(upload)
+    workflows.write_meta(upload, "upload", "仅上传")
+    assert not api.export_task_template(str(upload), str(tmp_path / "nope.json"))["ok"]
+
+
 def test_cli_diagnostic_and_template_routes(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("MISONG_HOME", str(tmp_path / "home"))
     assert main(["template", "export", str(tmp_path / "templates.json")]) == 0

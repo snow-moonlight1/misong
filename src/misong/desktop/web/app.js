@@ -387,17 +387,17 @@ const ACCT_STATE = {
   verification: {cls:"warn", text:"需要人工验证", tip:"请由账号所有者完成验证码或绑定后重新检查"},
   unknown: {cls:"warn", text:"检查未能确认", tip:"超时或检查环境故障，不能据此判断登录失效"},
   none: { cls: "", text: "未登录", tip: "还没有在本机登录该网盘" },
-  loggedin: { cls: "run", text: "已登录 · 未测试", tip: "已登录，但本机还没有用该盘完整跑通一次上传 + 分享" },
-  tested: { cls: "ok", text: "已通过测试", tip: "本机已用该盘完整跑通上传 + 分享；检测登录不会改变这一状态" },
-  expired: { cls: "bad", text: "登录失效", tip: "上次打开网盘时未能确认已登录，请重新登录" },
-  neterr: { cls: "warn", text: "检测失败 · 网络", tip: "上次检测时网盘页面打不开（网络问题），登录未必失效，网络恢复后再检测一次" },
+  loggedin: { cls: "run", text: "已登录", tip: "会话已保存；当前是否有效可点检查登录确认" },
+  tested: { cls: "ok", text: "曾通过测试", tip: "本机曾完整跑通上传 + 分享，不代表当前会话仍有效；以检查登录为准" },
+  expired: { cls: "bad", text: "登录失效", tip: "上次检查未能确认已登录，请重新登录" },
+  neterr: { cls: "warn", text: "检查失败 · 网络", tip: "上次检查时网盘页面打不开（网络问题），登录未必失效，网络恢复后再检查一次" },
 };
 function statusInfo(a) {
   const base = ACCT_STATE[a.state] || ACCT_STATE[a.session ? "loggedin" : "none"];
   let when = "";
-  if (a.state === "tested" && a.verified_at) when = "测试通过 " + fmtShort(a.verified_at);
+  if (a.state === "tested" && a.verified_at) when = "测试于 " + fmtShort(a.verified_at);
   else if (a.state === "loggedin" && (a.session_at || a.session_saved)) when = (a.session_at ? "登录确认 " : "登录保存 ") + fmtShort(a.session_at || a.session_saved);
-  else if ((a.state === "expired" || a.state === "neterr") && a.last_error_at) when = "检测于 " + fmtShort(a.last_error_at);
+  else if ((a.state === "expired" || a.state === "neterr") && a.last_error_at) when = "检查于 " + fmtShort(a.last_error_at);
   return Object.assign({ when }, base);
 }
 function diskPicker(selected, onToggle, opts = {}) {
@@ -1370,9 +1370,9 @@ function renderTaskDetail() {
   const running = !!(S.job && S.job.plan && S.job.plan === d.plan);
   const errHtml = d.error && d.state !== "complete" ? `<div class="callout warn">${icon("warn")}<span><b>上次中断原因：</b>${esc(d.error)}。可点“继续”从检查点接着跑；如果已在网盘里手动分享，也可以“回填分享”。</span></div>` : "";
   const noteHtml = d.note ? `<div class="callout">${icon("info")}<span>${esc(d.note)}</span></div>` : "";
-  host.innerHTML = `<div class="detail"><div class="detail-head"><div class="detail-title"><button class="star big ${d.starred ? "on" : ""}" data-dstar title="${d.starred ? "取消收藏" : "收藏"}" aria-label="收藏">${icon(d.starred ? "starfill" : "star")}</button><div><h2>${esc(d.title)}</h2><p>${esc(d.dir)}</p></div></div>
-    <div class="btn-row">${canResume ? `<button class="btn btn-primary" data-resume="${esc(d.plan)}" ${running ? "disabled" : ""}>${icon("play")}继续</button>` : ""}<button class="btn" data-reuse title="把这个任务的打包、网盘和文案设置填到新建页面（不含密码和资源）">${icon("refresh")}复用设置</button><button class="btn" data-open="${esc(d.dir)}" title="打开当前选中任务的文件夹">${icon("folder")}打开当前任务目录</button>
-    <button class="btn btn-ghost icon-only" data-edit title="重命名 / 备注" aria-label="编辑">${icon("edit")}</button><button class="btn btn-ghost icon-only btn-danger" data-del title="${d.imported ? "从列表移除（保留文件）" : "删除（移到回收站）"}" aria-label="删除" ${running ? "disabled" : ""}>${icon("trash")}</button></div></div>
+  host.innerHTML = `<div class="detail"><div class="detail-head"><div class="detail-title"><button class="star big ${d.starred ? "on" : ""}" data-dstar title="${d.starred ? "取消收藏" : "收藏"}" aria-label="收藏">${icon(d.starred ? "starfill" : "star")}</button><div><h2>${esc(d.title)}</h2><button class="path-link" data-open="${esc(d.dir)}" title="点击打开任务文件夹">${icon("folder")}<span>${esc(d.dir)}</span></button></div></div></div>
+    <div class="detail-actions">${canResume ? `<button class="btn btn-primary" data-resume="${esc(d.plan)}" ${running ? "disabled" : ""}>${icon("play")}继续</button>` : ""}<button class="btn" data-reuse title="把这个任务的打包、网盘和文案设置填到新建页面（不含密码和资源）">${icon("refresh")}复用设置</button>${(d.settings?.layers || []).length ? `<button class="btn" data-exporttpl title="把这个任务的层配置导出为模板文件（不含密码、密钥和路径）；下次发布时拖进新建页面即可套用">${icon("download")}导出模板</button>` : ""}<span class="grow"></span>
+    <button class="btn btn-ghost icon-only" data-edit title="重命名 / 备注" aria-label="编辑">${icon("edit")}</button><button class="btn btn-ghost icon-only btn-danger" data-del title="${d.imported ? "从列表移除（保留文件）" : "删除（移到回收站）"}" aria-label="删除" ${running ? "disabled" : ""}>${icon("trash")}</button></div>
     ${errHtml}${noteHtml}${cleanupNote(d)}<div class="detail-grid">${statsHtml}</div>${stages}${d.delivery?.recipes?.length ? `<div class="card"><h3>交付方案</h3>${d.delivery.recipes.map(r => `<p>${esc(r.name)} · ${esc(STATE_LABEL[r.status] || r.status)} ${esc(r.error_code || "")}</p>`).join("")}</div>` : ""}${copies}${filesHtml}</div>`;
   paintIcons(host);
   $$("[data-open]", host).forEach((b) => b.addEventListener("click", () => call("open_path", b.dataset.open).catch((e) => toast(e.message, "err"))));
@@ -1384,6 +1384,14 @@ function renderTaskDetail() {
   $("[data-edit]", host).addEventListener("click", () => editTaskModal(d));
   $("[data-del]", host).addEventListener("click", () => deleteTaskModal(d));
   $("[data-reuse]", host).addEventListener("click", () => reuseSettings(d));
+  const et = $("[data-exporttpl]", host);
+  if (et) et.addEventListener("click", async () => {
+    try {
+      const path = await call("pick_save_file", "task-template"); if (!path) return;
+      const r = await call("export_task_template", d.dir, path);
+      toast("已导出模板：" + r.path, "ok");
+    } catch (e) { toast(e.message, "err"); }
+  });
 }
 function editTaskModal(d) {
   const draft = { title: d.title, note: d.note || "" };
@@ -1446,6 +1454,23 @@ function reuseSettings(d) {
   const needPw = page !== "upload" && st.layers.some((l) => l._lock);
   toast("已载入该任务的设置，请重新添加" + (page === "upload" ? "文件" : "资源") + (needPw ? "，并在加密层填写密码" : ""), "ok");
 }
+/* a dropped template file: one template applies to the editor, several become quick templates */
+async function applyTemplateDrop(page, paths) {
+  try {
+    const r = await call("template_from_paths", paths);
+    if (r.saved) {
+      templatesChanged(r.saved.templates, page, `已存入 ${r.saved.added.length} 个快速模板${r.saved.renamed.length ? "，重名已自动改名" : ""}`);
+      return;
+    }
+    const t = r.templates[0]; const st = S[page];
+    applyLayers(st, t.layers || [], { ...t, split: page === "pipeline" ? true : st.split });
+    st.result = null;
+    if (page === "pipeline") st._step = 2;
+    rerender(page);
+    const need = missingLocked(st);
+    toast(`已套用模板「${t.name}」` + (need ? `，请在标出的 ${need} 个加密层填写密码` : ""), "ok");
+  } catch (e) { toast(e.message, "err"); }
+}
 function fillShare(plan, stageId) {
   const box = modal(`<h3>回填分享链接</h3><p>粘贴该阶段已上传文件的完整分享文本（含提取码），系统会自动解析。</p>
     <textarea class="input" id="fillText" placeholder="https://pan.quark.cn/s/xxxx\n提取码：abcd"></textarea>
@@ -1477,54 +1502,74 @@ function renderAccounts() {
   const grid = $("#accountGrid");
   const labels = S.meta.browser_labels || {};
   grid.innerHTML = S.accounts.map((a) => {
-    if (!a.auto) return `<div class="acct"><div class="acct-top">${avatar(a.key, a.label)}<div><b>${esc(a.label)}</b><div class="acct-badges"><span class="badge">仅手动回填</span></div></div></div><div class="acct-off">该网盘暂无自动驱动。可在其它网盘发布后，于任务中心手动回填分享链接。</div></div>`;
+    if (!a.auto) return `<div class="acct"><div class="acct-top">${avatar(a.key, a.label)}<div><b>${esc(a.label)}</b><div class="acct-badges"><span class="badge">仅手动回填</span></div></div></div><div class="acct-off">暂无自动驱动，可在任务中心手动回填分享链接。</div></div>`;
     const s = statusInfo(a);
     const latest = [a.session_at, a.verified_at].filter(Boolean).sort().pop() || "";
     const err = a.last_error && (!latest || (a.last_error_at || "") >= latest)
       ? `<div class="acct-err" title="${esc(a.last_error)}">${icon("warn")}<span>上次出错${a.last_error_at ? "（" + esc(fmtShort(a.last_error_at)) + "）" : ""}：${esc(a.last_error)}</span></div>` : "";
     const hint = a.browser && a.browser !== "chromium"
-      ? `<div class="acct-hint">此盘已记住使用 ${esc(labels[a.browser] || a.browser)}；如遇问题可改回 Chromium 后重新登录。</div>` : "";
+      ? `<div class="acct-hint">已记住使用 ${esc(labels[a.browser] || a.browser)}，遇到问题可改回 Chromium。</div>` : "";
     return `<div class="acct" data-acct="${a.key}"><div class="acct-top">${avatar(a.key, a.label)}<div><b>${esc(a.label)}</b><div class="acct-badges"><span class="badge ${s.cls}" title="${esc(s.tip)}">${esc(s.text)}</span>${s.when ? `<small class="acct-when">${esc(s.when)}</small>` : ""}</div></div></div>
       ${err}<div class="acct-actions">${browserSelect(a)}
-      <button class="btn" data-op="check">${icon("refresh")}检测登录</button><button class="btn" data-op="selfcheck">只读自检</button><button class="btn btn-primary" data-op="login">${icon("user")}登录</button></div>${hint}</div>`;
+      <button class="btn" data-op="check" title="确认保存的会话当前是否有效">${icon("refresh")}检查登录</button><button class="btn btn-primary" data-op="login">${icon("user")}登录</button></div>${hint}</div>`;
   }).join("");
   paintIcons(grid);
   $$("[data-acct]", grid).forEach((card) => {
     const disk = card.dataset.acct; const sel = $("select", card);
     $$("[data-op]", card).forEach((b) => b.addEventListener("click", async () => {
       if (S.job) { toast("已有任务运行中，请稍后", "warn"); return; }
-      try { const data = b.dataset.op === "check" ? await call("check_accounts", disk, sel.value) : b.dataset.op === "selfcheck" ? await call("selfcheck", disk, sel.value, $("#selfcheckSnapshots").checked) : await call("account_action", disk, b.dataset.op, sel.value); S.job = data; renderJobCard(); renderAll(); toast(b.dataset.op === "login" ? "已在浏览器中打开，请完成登录" : "正在只读检查…", ""); }
+      try { const data = b.dataset.op === "check" ? await call("check_accounts", disk, sel.value) : await call("account_action", disk, b.dataset.op, sel.value); S.job = data; renderJobCard(); renderAll(); toast(b.dataset.op === "login" ? "已在浏览器中打开，请完成登录" : "正在检查登录…", ""); }
       catch (e) { toast(e.message, "err"); }
     }));
   });
+  const diskSel = $("#selfcheckDisk"); const prev = diskSel.value;
+  diskSel.innerHTML = S.accounts.filter((a) => a.auto).map((a) => `<option value="${a.key}">${esc(a.label)}</option>`).join("");
+  if (prev && $$("option", diskSel).some((o) => o.value === prev)) diskSel.value = prev;
   const reports = S.accountReport || [];
-  $("#accountReport").innerHTML = reports.length ? `<h3>本次检查结果</h3>${reports.map(r => `<p>${esc(r.disk)} · ${esc(r.status)} · ${esc(r.code)}${(r.selectors || []).map(s => `<br>${esc(s.item)}：${esc(s.status)}`).join("")}</p>`).join("")}` : "";
+  const box = $("#accountReport");
+  box.hidden = !reports.length;
+  box.innerHTML = reports.length ? `<h3>检查结果</h3>${reports.map(reportLine).join("")}` : "";
+  paintIcons(box);
+}
+
+/* ---------- check reports: owner-facing Chinese, raw codes stay hidden ---------- */
+const ENTRY_LABEL = { upload: "上传控件", upload_menu: "上传菜单", upload_trigger: "上传入口", upload_button: "上传按钮", new_folder: "新建文件夹", new_folder_menu: "新建文件夹菜单", share: "分享入口", share_more: "更多分享" };
+const ENTRY_STATUS = { passed: "已找到", not_observed: "未检查", missing: "未找到", hidden: "被隐藏", disabled: "不可用", ambiguous: "匹配不唯一", covered: "被遮挡", covered_overlay: "被浮层遮挡", selector_error: "识别出错", not_configured: "未配置", timeout: "超时", cancelled: "已取消" };
+function entryTip(s) {
+  if (s.status === "not_observed") return "可能只是未选中文件、入口未显示或未启用，不代表失败";
+  if (s.item === "upload" && s.status === "passed") return "只表示找到上传控件，不代表上传成功";
+  return "";
+}
+function reportSummary(r) {
+  if ((r.code || "").startsWith("selectors_")) {
+    return { passed: "网页入口识别正常", incomplete: "入口基本正常，部分未检查", failed: "部分入口识别异常", timeout: "检查超时", cancelled: "检查已取消" }[r.status] || "检查未能完成";
+  }
+  return { logged_in: "会话有效", logged_out: "会话失效，请重新登录", network_error: "网络故障，未能确认", verification_required: "需要人工验证", unknown: "未能确认（超时或检查故障）", timeout: "未能确认（超时）", error: "未能确认（检查故障）", cancelled: "检查已取消" }[r.status] || "未能确认";
+}
+function reportLine(r) {
+  const label = (S.meta.providers.find((p) => p.key === r.disk) || {}).label || r.disk;
+  const items = (r.selectors || []).map((s) => {
+    const tip = entryTip(s);
+    return `<div${tip ? ` title="${esc(tip)}"` : ""}>${esc(ENTRY_LABEL[s.item] || "其它入口")}：${esc(ENTRY_STATUS[s.status] || "未知结果")}</div>`;
+  }).join("");
+  return `<div class="report-item"><p><b>${esc(label)}</b> · ${esc(reportSummary(r))}</p>${items ? `<details class="more"><summary>${icon("chevron")}入口详情</summary><div class="more-body">${items}</div></details>` : ""}</div>`;
 }
 
 function renderSettings() {
-  $("#settingsResult").textContent = S.settingsResult || "密送 " + (S.meta.version || "") + " · 密钥不保存到模板或设置";
+  const pick = $("#diagTaskPick");
+  const prev = pick.value;
+  pick.innerHTML = `<option value="">不附带</option>` + S.tasks.items.map((t) => `<option value="${esc(t.dir)}">${esc(t.title)}</option>`).join("");
+  if ([...pick.options].some((o) => o.value === prev)) pick.value = prev;
+  $("#settingsResult").textContent = S.settingsResult || "密送 " + (S.meta.version || "") + " · 密钥不写入诊断包";
 }
-async function settingsAction(kind) {
+async function settingsAction() {
   try {
     if (S.job) throw new Error("请先暂停正在运行的任务");
-    let result;
-    if (kind === "import") {
-      const paths = await call("pick_files", false); if (!paths[0]) return;
-      result = await call("import_templates", paths[0]); templatesChanged(result.templates, null);
-      S.settingsResult = `已导入 ${result.added.length} 个模板${result.renamed.length ? "，重名模板已自动改名" : ""}`;
-    } else {
-      const path = await call("pick_save_file", kind === "export" ? "templates" : "diagnostics"); if (!path) return;
-      if (kind === "export") result = await call("export_templates", path);
-      else {
-        const selected = S.tasks.items.find(t => taskId(t) === S.tasks.sel);
-        if ($("#diagTask").checked && !selected) throw new Error("请先在任务中心选中任务");
-        const shots = $("#diagScreenshots").checked ? (S.settingsScreenshots || []) : [];
-        if ($("#diagScreenshots").checked && !shots.length) throw new Error("请选择本次明确附加的截图");
-        result = await call("export_diagnostics", path, $("#diagTask").checked ? [selected.dir] : [], shots, S.logs.map(x => x.text));
-      }
-      S.settingsResult = "已导出：" + result.path;
-    }
-    renderSettings(); toast("操作完成", "ok");
+    const dir = $("#diagTaskPick").value;
+    const path = await call("pick_save_file", "diagnostics"); if (!path) return;
+    const result = await call("export_diagnostics", path, dir ? [dir] : [], S.logs.map(x => x.text));
+    S.settingsResult = "已导出：" + result.path;
+    renderSettings(); toast("导出完成", "ok");
   } catch(e) { toast(e.message, "err"); }
 }
 
@@ -1595,9 +1640,14 @@ function bindShell() {
   $("#taskSearch").addEventListener("input", (e) => { S.tasks.query = e.target.value; renderTasks(); });
   $("#accountsRefresh").addEventListener("click", loadAccounts);
   $("#accountsCheckAll").addEventListener("click", async () => { try { if (S.job) throw new Error("请先等待当前任务完成"); S.job = await call("check_accounts"); renderJobCard(); } catch(e) { toast(e.message,"err"); } });
-  $$("[data-settings-action]").forEach(b => b.onclick = () => settingsAction(b.dataset.settingsAction));
-  $("#diagScreenshots").onchange = e => { $("#diagShotOptions").hidden = !e.target.checked; if (!e.target.checked) { S.settingsScreenshots = []; $("#diagShotCount").textContent = "尚未选择"; } };
-  $("#diagPickShots").onclick = async () => { try { const paths=await call("pick_files",true); S.settingsScreenshots=paths; $("#diagShotCount").textContent=`已选择 ${paths.length} 张（请自行检查内容）`; } catch(e) { toast(e.message,"err"); } };
+  $("#selfcheckRun").addEventListener("click", async () => {
+    if (S.job) { toast("已有任务运行中，请稍后", "warn"); return; }
+    const disk = $("#selfcheckDisk").value;
+    const acc = S.accounts.find((a) => a.key === disk);
+    try { S.job = await call("selfcheck", disk, acc ? acc.browser : null, $("#selfcheckSnapshots").checked); renderJobCard(); toast("正在检查网页适配…", ""); }
+    catch (e) { toast(e.message, "err"); }
+  });
+  $$("[data-settings-action]").forEach(b => b.onclick = () => settingsAction());
   $$("#taskFilter button").forEach((b) => b.addEventListener("click", () => { $$("#taskFilter button").forEach((x) => x.classList.toggle("on", x === b)); S.tasks.filter = b.dataset.v; renderTasks(); }));
   bindCodec();
   // global drag-drop to the active page
@@ -1607,6 +1657,7 @@ function bindShell() {
     if (d && d.kind === "video" && Date.now() - d.t < 8000 && (p === "pipeline" || p === "pack")) { setVideo(p, paths.find(isVideo) || paths[0], d.layer); return; }
     if (p === "restore") { addRestorePaths(paths).catch(e => toast(e.message, "err")); }
     else if (p === "pipeline" || p === "pack") {
+      if (paths.every((x) => /\.json$/i.test(String(x)))) { applyTemplateDrop(p, paths); return; }
       addPaths(S[p].inputs, paths, false).then(() => { rerender(p); if (p === "pipeline" && (S.pipeline._step || 1) !== 1) toast("已添加到第 1 步「选择资源」", "ok"); });
     }
     else if (p === "upload") { addPaths(S.upload.files, paths, true).then(() => rerender("upload")); }

@@ -51,6 +51,7 @@ class Fake:
         self.live_state = ""
         self.requests: list[tuple] = []
         self.next_pick: list[str] | None = None
+        self.save_counter = 0
 
     def stages(self, done):
         return [
@@ -84,10 +85,13 @@ class Fake:
         args = args or []
         api = self.api
         if method in ("bootstrap", "share_choices", "encode", "decode", "save_settings", "templates", "save_template", "delete_template",
-                      "reset_templates", "text_capabilities", "import_templates", "export_templates", "export_diagnostics"):
+                      "reset_templates", "text_capabilities", "import_templates", "export_templates",
+                      "template_from_paths"):
             if method == "save_settings":
                 self.requests.append((method, args))
                 return {"ok": True, "data": True}
+            if method == "template_from_paths":
+                self.requests.append((method, args))
             return getattr(api, method)(*args)
         if method == "choose_output_dir":
             self.output_choices += 1
@@ -134,6 +138,23 @@ class Fake:
                 data = [r"D:\资源\intro.mp4"] if len(args) > 1 and args[1] else [r"D:\资源\S01E01.mkv", r"D:\资源\字幕.zip"]
         elif method == "pick_folder":
             data = [r"D:\资源\纪录片合集"]
+        elif method == "pick_save_file":
+            self.requests.append((method, args))
+            self.save_counter += 1
+            kind = args[0] if args else "diagnostics"
+            ext = ".zip" if kind == "diagnostics" else ".json"
+            data = str(api._state.parent / f"picked-{kind}-{self.save_counter}{ext}")
+        elif method == "export_diagnostics":
+            self.requests.append((method, args))
+            data = {"path": args[0], "members": 0, "bytes": 0, "screenshots": 0, "notice": "demo"}
+        elif method == "export_task_template":
+            self.requests.append((method, args))
+            from misong import templates as tpl
+            t = next(t for t in self.tasks() if t["dir"] == args[0])
+            s = t.get("settings") or {}
+            item = {"name": t["title"][:24], "layers": s.get("layers") or [],
+                    "disguise": s.get("disguise", ""), "size": s.get("size", "")}
+            data = tpl.export_file([tpl.validate_template(item, strict=False)], args[1])
         elif method == "describe_paths":
             data = [{"path": p, **FILES.get(p, {"name": Path(p).name, "dir": False, "size": 1})} for p in args[0]]
         elif method == "folder_files":
@@ -423,7 +444,7 @@ def main():
         nav("tasks")
         page.wait_for_timeout(500)
         assert page.locator("#tasksOpen").count() == 0
-        assert page.locator("#taskDetail [data-open]").inner_text() == "打开当前任务目录"
+        assert page.locator("#taskDetail .path-link[data-open]").inner_text() == r"D:\misong\runs\a"
         assert "上传中" in page.locator("#taskDetail").inner_text()
         fake.finish(promote=True)
         page.wait_for_timeout(2600)
@@ -464,18 +485,53 @@ def main():
         # Reuse an old task: migrate disguise+size into explicit typed layers.
         page.locator(".task[data-task]").first.click()
         page.wait_for_timeout(300)
+        # Export this task's public layer config, then drag the file back into the editor.
+        assert page.locator("#taskDetail [data-exporttpl]").count() == 1
+        click("#taskDetail [data-exporttpl]", 500)
+        tpl_path = [a for m, a in fake.requests if m == "export_task_template"][-1][1]
+        assert Path(tpl_path).exists()
+        shot("15d-task-export-template")
         click("[data-reuse]", 300)
         state = page.evaluate("window.__MISONG_APP__.S.pipeline.layers")
         assert [x["type"] for x in state] == ["archive", "archive", "rename", "split"]
         assert state[1]["_lock"] and not state[1]["password"]
         assert state[-1]["size"] == "1900M"
         shot("15c-legacy-task-migrated")
+        page.evaluate("p => window.misongDrop([p])", tpl_path)
+        page.wait_for_timeout(500)
+        state = page.evaluate("window.__MISONG_APP__.S.pipeline.layers")
+        assert [x["type"] for x in state] == ["archive", "archive", "rename", "split"]
+        assert page.evaluate("window.__MISONG_APP__.S.pipeline._step") == 2
+        assert "已套用模板" in page.locator("#toasts").inner_text()
+        shot("15e-template-drag-applied")
         nav("accounts")
         page.wait_for_timeout(300)
         shot("16-accounts")
         shot("16b-accounts-bottom", 5000)
+        click("#accountTroubleshoot summary", 200)
+        shot_at("16c-accounts-troubleshoot", "#accountTroubleshoot")
+        page.evaluate("""() => { const A = window.__MISONG_APP__;
+          A.S.accountReport = [
+            {disk: 'quark', status: 'incomplete', code: 'selectors_incomplete', headless: true, attempts: 1,
+             selectors: [{item: 'upload', status: 'passed'}, {item: 'share', status: 'not_observed'}]},
+            {disk: 'uc', status: 'logged_in', code: 'authenticated_marker', headless: true, attempts: 1, selectors: []}];
+          A.rerender('accounts'); }""")
+        click("#accountReport details summary", 200)
+        shot_at("16d-accounts-report", "#accountReport")
         nav("settings")
-        shot("17-settings")
+        assert page.locator(".page.active h1").inner_text() == "诊断"
+        assert page.locator(".nav-item[data-page='settings'] span").inner_text() == "诊断"
+        assert page.locator(".page.active [data-settings-action]").count() == 1
+        assert page.locator("#diagScreenshots").count() == 0
+        assert "模板" not in page.locator(".page.active").inner_text()
+        options = page.locator("#diagTaskPick option")
+        assert options.count() >= 2 and options.first.inner_text() == "不附带"
+        page.select_option("#diagTaskPick", r"D:\misong\runs\a")
+        click(".page.active [data-settings-action]", 400)
+        diag = [a for m, a in fake.requests if m == "export_diagnostics"][-1]
+        assert diag[1] == [r"D:\misong\runs\a"]
+        assert "已导出" in page.locator("#settingsResult").inner_text()
+        shot("17-diagnostics")
         # Release-only task-center resume: public recipe metadata, no secrets.
         fake.edits[r"D:\misong\runs\a"].update(
             state="blocked", delivery={"label": "分享完成、文案未完成", "recipes": []},

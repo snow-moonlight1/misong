@@ -1,6 +1,14 @@
 # ⑦ 诊断包导出与模板导入导出 · 交接说明
 
 > 2026-10-30 S 已接入 CLI/API/设置页，并补齐公共文档。下文保留 G 初始交接；原待办中模板重写丢失 options/配方、源视频路径残留及脱敏第 1–5 项已修复。第 6 项仍由严格白名单控制，不能把任意原文交给日志。当前验收见[发布记录](../releases/0.2.0.md)。
+>
+> 2026-11-08 更新：模板导出移到任务详情页“导出模板”（`Api.export_task_template`，只导出该任务的公开层配置）；
+> 一条龙发布 / 加密打包页拖入模板文件经 `Api.template_from_paths` 校验，单个直接套用、多个存为快速模板。
+> 设置页撤掉模板卡片并更名“诊断”，下文“设置页 / 前端”的模板区为历史记录。CLI 与模板文件格式不变。
+>
+> 2026-11-08 收尾：诊断页改为单列排版，任务摘要由页面内下拉显式选择（默认“不附带”），桌面端移除“附带截图”；
+> 服务层与 CLI `diag export --screenshot` 保留，桥接层 `Api.export_diagnostics(path, tasks, log_lines)`
+> 不再接收截图参数。任务详情头部改为路径链接 + 独立操作工具行。
 
 初始交付状态：服务层与测试已完成（`src/misong/diagnostics.py`、`src/misong/templates.py`、
 `tests/test_diagnostics.py`、`tests/test_templates.py`）。CLI / API / 设置页接线与公共文档、

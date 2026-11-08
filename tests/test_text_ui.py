@@ -202,9 +202,12 @@ def test_task_center_resume_collects_only_pending_recipe_secrets(ui):
     page.click("#tasksRefresh")
     page.wait_for_function("() => document.querySelector('#taskDetail').textContent.includes('分享完成、文案未完成')")
     title = page.locator("#taskDetail .detail-title").bounding_box()
-    actions = page.locator("#taskDetail .detail-head > .btn-row").bounding_box()
+    actions = page.locator("#taskDetail .detail-actions").bounding_box()
     assert title["width"] >= 180 and actions["y"] >= title["y"] + title["height"]
     assert page.locator("#taskDetail h2").bounding_box()["height"] < 60
+    assert page.locator("#taskDetail .detail-actions [data-edit]").count() == 1
+    assert page.locator("#taskDetail .detail-head [data-edit]").count() == 0
+    assert page.locator("#taskDetail .path-link[data-open]").inner_text() == r"D:\misong\runs\a"
     page.click("#taskDetail [data-resume]")
     page.wait_for_selector("#modal [data-resume-secret='pending/magic']")
     assert page.locator("#modal [data-resume-export]:checked").count() == 0
@@ -237,12 +240,114 @@ def test_imported_template_applies_options_and_exact_public_recipe(ui):
 def test_settings_and_batch_check_controls_are_wired(ui):
     page, fake, api, errors = ui
     page.click(".nav-item[data-page='settings']")
-    assert page.locator(".page.active [data-settings-action]").count() == 3
-    assert "截图" in page.locator(".page.active").inner_text()
-    assert not page.locator("#diagScreenshots").is_checked()
+    page.wait_for_timeout(200)
+    assert page.locator(".page.active [data-settings-action]").count() == 1
+    assert page.locator(".page.active h1").inner_text() == "诊断"
+    page_text = page.locator(".page.active").inner_text()
+    assert "不含密码、密钥、会话和截图" in page_text
+    assert page.locator("#diagScreenshots").count() == 0
+    pick = page.locator("#diagTaskPick")
+    assert pick.input_value() == ""
+    assert pick.locator("option").first.inner_text() == "不附带"
+    assert "纪录片合集" in pick.inner_text()
+    page.click(".page.active [data-settings-action]")
+    page.wait_for_timeout(300)
+    path, tasks, logs = requests(fake, "export_diagnostics")[-1]
+    assert tasks == [] and isinstance(logs, list)
+    assert "已导出" in page.locator("#settingsResult").inner_text()
+    page.select_option("#diagTaskPick", r"D:\misong\runs\a")
+    page.click(".page.active [data-settings-action]")
+    page.wait_for_timeout(300)
+    assert requests(fake, "export_diagnostics")[-1][1] == [r"D:\misong\runs\a"]
     page.click(".nav-item[data-page='accounts']")
     assert not page.locator("#selfcheckSnapshots").is_checked()
     page.click("#accountsCheckAll")
     page.wait_for_function("() => !!window.__MISONG_APP__.S.job")
     assert requests(fake, "check_accounts")[-1] == []
+    assert not errors
+
+
+def test_accounts_plain_chinese_results_and_troubleshoot_wiring(ui):
+    page, fake, api, errors = ui
+    page.click(".nav-item[data-page='accounts']")
+    page.wait_for_timeout(300)
+    card = page.locator(".acct[data-acct='quark']")
+    assert card.locator("[data-op='check']").inner_text().strip() == "检查登录"
+    assert card.locator("[data-op='login']").count() == 1
+    assert card.locator("[data-op='selfcheck']").count() == 0
+    assert "曾通过测试" in card.inner_text()
+    assert page.locator("#accountsCheckAll").inner_text() == "检查全部登录"
+    assert page.evaluate("() => !document.querySelector('#accountTroubleshoot').open")
+    assert not page.locator("#selfcheckSnapshots").is_checked()
+    assert "状态说明" not in page.locator(".page.active").inner_text()
+    page.click("#accountTroubleshoot summary")
+    page.select_option("#selfcheckDisk", "uc")
+    page.click("#selfcheckRun")
+    page.wait_for_function("() => !!window.__MISONG_APP__.S.job")
+    assert requests(fake, "selfcheck")[-1] == ["uc", "chrome", False]
+    page.evaluate("""() => { const A = window.__MISONG_APP__;
+      A.S.accountReport = [
+        {disk: 'uc', status: 'logged_in', code: 'authenticated_marker', headless: true, attempts: 1, selectors: []},
+        {disk: 'quark', status: 'incomplete', code: 'selectors_incomplete', headless: true, attempts: 1,
+         selectors: [{item: 'upload', status: 'passed'}, {item: 'share', status: 'not_observed'}]}];
+      A.rerender('accounts'); }""")
+    report = page.locator("#accountReport")
+    text = report.inner_text()
+    assert "UC网盘" in text and "会话有效" in text
+    assert "入口基本正常，部分未检查" in text
+    for raw in ("uc ·", "logged_in", "incomplete", "selectors_incomplete", "not_observed", "上传成功"):
+        assert raw not in text
+    page.click("#accountReport details summary")
+    text = report.inner_text()
+    assert "上传控件：已找到" in text and "分享入口：未检查" in text
+    page.click(".nav-item[data-page='settings']")
+    assert page.locator(".page.active h1").inner_text() == "诊断"
+    assert not errors
+
+
+def test_task_detail_exports_template_and_drag_applies_it(ui):
+    page, fake, api, errors = ui
+    page.click(".nav-item[data-page='tasks']")
+    page.wait_for_timeout(300)
+    assert page.locator("#taskDetail [data-exporttpl]").count() == 1
+    page.click("#taskDetail [data-exporttpl]")
+    page.wait_for_timeout(400)
+    assert requests(fake, "pick_save_file")[-1] == ["task-template"]
+    folder, path = requests(fake, "export_task_template")[-1]
+    assert folder == r"D:\misong\runs\a"
+    doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    assert doc["kind"] == "misong-templates" and len(doc["templates"]) == 1
+    item = doc["templates"][0]
+    assert item["name"] == "纪录片合集"
+    assert [l["fmt"] for l in item["layers"]] == ["lz4", "7z"]
+    assert item["layers"][1]["locked"] is True and "password" not in json.dumps(doc)
+    # upload-only tasks have no packing layers to export
+    page.locator(".task", has_text="S01E01.mkv 等 3 个文件").click()
+    page.wait_for_timeout(300)
+    assert page.locator("#taskDetail [data-exporttpl]").count() == 0
+    # dragging the exported file into the editor applies layers without passwords
+    page.click(".nav-item[data-page='pipeline']")
+    page.wait_for_timeout(300)
+    page.evaluate("p => window.misongDrop([p])", path)
+    page.wait_for_timeout(500)
+    state = page.evaluate("""() => { const p = window.__MISONG_APP__.S.pipeline;
+      return {types: p.layers.map(l => l.type), step: p._step, lock: p.layers[1]._lock, pw: p.layers[1].password}; }""")
+    assert state == {"types": ["archive", "archive", "rename", "split"], "step": 2, "lock": True, "pw": ""}
+    assert requests(fake, "template_from_paths")[-1] == [[path]]
+    assert "已套用模板" in page.locator("#toasts").inner_text()
+    assert not errors
+
+
+def test_dropping_several_templates_stores_quick_templates(ui, tmp_path):
+    page, fake, api, errors = ui
+    doc = {"schema_version": 1, "kind": "misong-templates", "templates": [
+        {"name": "拖入甲", "layers": [{"fmt": "7z", "locked": True, "header_enc": True}]},
+        {"name": "拖入乙", "layers": [{"fmt": "zip", "locked": False, "header_enc": True}]}]}
+    path = tmp_path / "two-templates.json"
+    path.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+    page.evaluate("p => window.misongDrop([p])", str(path))
+    page.wait_for_timeout(500)
+    names = [t["name"] for t in api.templates()["data"]]
+    assert "拖入甲" in names and "拖入乙" in names
+    assert "已存入 2 个快速模板" in page.locator("#toasts").inner_text()
     assert not errors
