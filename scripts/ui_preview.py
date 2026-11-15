@@ -64,7 +64,9 @@ class Fake:
             {"plan": r"D:\misong\runs\a\relay-plan.json", "dir": r"D:\misong\runs\a", "kind": "pipeline", "title": "纪录片合集", "state": "uploading",
              "created": "2026-10-18T21:40:00", "updated": "2026-10-18T22:10:00", "form": "simple", "stages": self.stages(2),
              "settings": {"layers": [{"fmt": "lz4", "locked": False}, {"fmt": "7z", "locked": True, "header_enc": True}], "disguise": "mp4", "size": "1900M",
-                          "disks": ["quark", "123pan"], "form": "simple"}},
+                          "body_disks": ["quark", "123pan"], "form": "simple", "hop_disk": "feimao",
+                          "expiry": "default", "access": "default",
+                          "pwd_hint": "请向分享者获取解压密码。", "schemes": ["beast", "mojibake", "hajimi"]}},
             {"plan": r"D:\misong\runs\b\relay-plan.json", "dir": r"D:\misong\runs\b", "kind": "upload", "title": "S01E01.mkv 等 3 个文件", "state": "complete",
              "created": "2026-10-17T19:02:00", "form": "direct", "stages": [{"id": "body", "role": "body", "disk": "feimao", "label": "飞猫盘", "state": "shared", "done": 3, "total": 3}]},
             {"plan": None, "dir": r"D:\misong\runs\c", "kind": "pack", "title": "字幕.zip", "state": "complete", "created": "2026-10-16T10:00:00", "chain": "lz4 → 7z🔒", "stages": []},
@@ -86,11 +88,11 @@ class Fake:
         api = self.api
         if method in ("bootstrap", "share_choices", "encode", "decode", "save_settings", "templates", "save_template", "delete_template",
                       "reset_templates", "text_capabilities", "import_templates", "export_templates",
-                      "template_from_paths"):
+                      "pipeline_template_from_paths"):
             if method == "save_settings":
                 self.requests.append((method, args))
                 return {"ok": True, "data": True}
-            if method == "template_from_paths":
+            if method == "pipeline_template_from_paths":
                 self.requests.append((method, args))
             return getattr(api, method)(*args)
         if method == "choose_output_dir":
@@ -150,11 +152,17 @@ class Fake:
         elif method == "export_task_template":
             self.requests.append((method, args))
             from misong import templates as tpl
-            t = next(t for t in self.tasks() if t["dir"] == args[0])
-            s = t.get("settings") or {}
+            t = next(t for t in self.tasks() if t["dir"] == args[0]); s = t.get("settings") or {}
             item = {"name": t["title"][:24], "layers": s.get("layers") or [],
-                    "disguise": s.get("disguise", ""), "size": s.get("size", "")}
-            data = tpl.export_file([tpl.validate_template(item, strict=False)], args[1])
+                    "disguise": s.get("disguise", ""), "size": s.get("size", ""),
+                    "options": {k: s[k] for k in ("raw_merge", "checksum") if isinstance(s.get(k), bool)},
+                    "disks": s.get("body_disks") or [], "form": s.get("form") or "direct",
+                    "hop_disk": s.get("hop_disk") or "", "expiry": s.get("expiry") or "default",
+                    "access": s.get("access") or "default", "pwd_hint": s.get("pwd_hint") or "",
+                    "schemes": s.get("schemes") or []}
+            if s.get("text_recipes"):
+                item["text_recipes"] = s["text_recipes"]
+            data = tpl.export_pipeline_file(item, args[1])
         elif method == "describe_paths":
             data = [{"path": p, **FILES.get(p, {"name": Path(p).name, "dir": False, "size": 1})} for p in args[0]]
         elif method == "folder_files":
@@ -485,11 +493,14 @@ def main():
         # Reuse an old task: migrate disguise+size into explicit typed layers.
         page.locator(".task[data-task]").first.click()
         page.wait_for_timeout(300)
-        # Export this task's public layer config, then drag the file back into the editor.
+        # Export this task's one-stop template, then drag the file back into the editor.
         assert page.locator("#taskDetail [data-exporttpl]").count() == 1
         click("#taskDetail [data-exporttpl]", 500)
         tpl_path = [a for m, a in fake.requests if m == "export_task_template"][-1][1]
         assert Path(tpl_path).exists()
+        doc = json.loads(Path(tpl_path).read_text(encoding="utf-8"))
+        assert doc["kind"] == "misong-pipeline-template"
+        assert doc["template"]["disks"] == ["quark", "123pan"]
         shot("15d-task-export-template")
         click("[data-reuse]", 300)
         state = page.evaluate("window.__MISONG_APP__.S.pipeline.layers")
@@ -497,12 +508,16 @@ def main():
         assert state[1]["_lock"] and not state[1]["password"]
         assert state[-1]["size"] == "1900M"
         shot("15c-legacy-task-migrated")
+        page.evaluate("""() => { const p = window.__MISONG_APP__.S.pipeline;
+          p.disks = ['feimao']; p.schemes = ['hex']; p._step = 4; }""")
         page.evaluate("p => window.misongDrop([p])", tpl_path)
         page.wait_for_timeout(500)
         state = page.evaluate("window.__MISONG_APP__.S.pipeline.layers")
         assert [x["type"] for x in state] == ["archive", "archive", "rename", "split"]
-        assert page.evaluate("window.__MISONG_APP__.S.pipeline._step") == 2
-        assert "已套用模板" in page.locator("#toasts").inner_text()
+        restored = page.evaluate("""() => { const p = window.__MISONG_APP__.S.pipeline;
+          return {step: p._step, disks: p.disks, schemes: p.schemes}; }""")
+        assert restored == {"step": 1, "disks": ["quark", "123pan"], "schemes": ["beast", "mojibake", "hajimi"]}
+        assert "已载入一条龙模板" in page.locator("#toasts").inner_text()
         shot("15e-template-drag-applied")
         nav("accounts")
         page.wait_for_timeout(300)

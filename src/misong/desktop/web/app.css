@@ -85,6 +85,7 @@ i[data-icon] svg { width: 100%; height: 100%; }
 .card-head h2 { font-size: 16px; font-weight: 620; line-height: 1.4; }
 .card-head p { color: var(--muted); font-size: 13px; margin-top: 2px; }
 .card-head .grow { flex: 1; }
+.card-head .card-head-btn { margin-left: auto; flex: none; }
 .step { width: 26px; height: 26px; border-radius: 8px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-weight: 650; font-size: 13px; flex: none; margin-top: 0; }
 .sub { border-top: 1px solid var(--border); margin-top: 18px; padding-top: 16px; }
 .sub-title { font-size: 13px; font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }

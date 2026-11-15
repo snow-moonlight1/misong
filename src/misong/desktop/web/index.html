@@ -50,7 +50,7 @@
       <div class="split">
         <div class="stack">
           <nav class="wizard" data-mount="wizard" aria-label="设置步骤"></nav>
-          <article class="card" data-step="1"><div class="card-head"><span class="step">1</span><div><h2>选择资源</h2><p>文件或文件夹，可多选，名称不能重复。</p></div></div><div data-mount="names"></div><div data-mount="files"></div></article>
+          <article class="card" data-step="1"><div class="card-head"><span class="step">1</span><div><h2>选择资源</h2><p>文件或文件夹，可多选，名称不能重复。</p></div><button class="btn btn-sm card-head-btn" id="pipelineImportTpl" title="导入一条龙模板；会恢复加密层、网盘、分享和文案，资源与密码需重新提供"><i data-icon="import"></i>导入模板</button></div><div data-mount="names"></div><div data-mount="files"></div></article>
           <article class="card" data-step="2" hidden><div class="card-head"><span class="step">2</span><div><h2>加密打包</h2><p>从内到外自由添加压缩、门面视频、分卷和改后缀层。</p></div></div><div data-mount="layers"></div><div data-mount="packopts"></div></article>
           <article class="card" data-step="3" hidden><div class="card-head"><span class="step">3</span><div><h2>上传与分享</h2><p>可同时发到多个网盘，接收方任选其一下载。</p></div></div><div data-mount="disks"></div></article>
           <article class="card" data-step="4" hidden><div class="card-head"><span class="step">4</span><div><h2>链接文案</h2><p>分享完成后，最终分享文案按并列文案或交付方案生成；文案失败只重试本步，不重新上传。</p></div></div><div data-mount="schemes"></div></article>

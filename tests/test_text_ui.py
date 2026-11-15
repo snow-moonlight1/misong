@@ -305,49 +305,110 @@ def test_accounts_plain_chinese_results_and_troubleshoot_wiring(ui):
     assert not errors
 
 
-def test_task_detail_exports_template_and_drag_applies_it(ui):
+def test_pipeline_task_exports_one_stop_template(ui):
     page, fake, api, errors = ui
     page.click(".nav-item[data-page='tasks']")
     page.wait_for_timeout(300)
     assert page.locator("#taskDetail [data-exporttpl]").count() == 1
     page.click("#taskDetail [data-exporttpl]")
     page.wait_for_timeout(400)
-    assert requests(fake, "pick_save_file")[-1] == ["task-template"]
+    assert requests(fake, "pick_save_file")[-1] == ["pipeline-template"]
     folder, path = requests(fake, "export_task_template")[-1]
     assert folder == r"D:\misong\runs\a"
     doc = json.loads(Path(path).read_text(encoding="utf-8"))
-    assert doc["kind"] == "misong-templates" and len(doc["templates"]) == 1
-    item = doc["templates"][0]
+    assert doc["kind"] == "misong-pipeline-template"
+    item = doc["template"]
     assert item["name"] == "纪录片合集"
     assert [l["fmt"] for l in item["layers"]] == ["lz4", "7z"]
     assert item["layers"][1]["locked"] is True and "password" not in json.dumps(doc)
-    # upload-only tasks have no packing layers to export
+    assert item["disks"] == ["quark", "123pan"] and item["form"] == "simple"
+    assert item["expiry"] == "default" and item["access"] == "default"
+    assert item["pwd_hint"] == "请向分享者获取解压密码。"
+    assert item["schemes"] == ["beast", "mojibake", "hajimi"]
+    # Packing-only and upload tasks cannot export a pipeline template.
+    page.locator(".task", has_text="字幕.zip").click()
+    page.wait_for_timeout(300)
+    assert page.locator("#taskDetail [data-exporttpl]").count() == 0
     page.locator(".task", has_text="S01E01.mkv 等 3 个文件").click()
     page.wait_for_timeout(300)
     assert page.locator("#taskDetail [data-exporttpl]").count() == 0
-    # dragging the exported file into the editor applies layers without passwords
-    page.click(".nav-item[data-page='pipeline']")
-    page.wait_for_timeout(300)
-    page.evaluate("p => window.misongDrop([p])", path)
-    page.wait_for_timeout(500)
-    state = page.evaluate("""() => { const p = window.__MISONG_APP__.S.pipeline;
-      return {types: p.layers.map(l => l.type), step: p._step, lock: p.layers[1]._lock, pw: p.layers[1].password}; }""")
-    assert state == {"types": ["archive", "archive", "rename", "split"], "step": 2, "lock": True, "pw": ""}
-    assert requests(fake, "template_from_paths")[-1] == [[path]]
-    assert "已套用模板" in page.locator("#toasts").inner_text()
     assert not errors
 
 
-def test_dropping_several_templates_stores_quick_templates(ui, tmp_path):
+def test_pipeline_import_button_restores_full_template(ui, tmp_path):
+    from misong.templates import export_pipeline_file
     page, fake, api, errors = ui
-    doc = {"schema_version": 1, "kind": "misong-templates", "templates": [
-        {"name": "拖入甲", "layers": [{"fmt": "7z", "locked": True, "header_enc": True}]},
-        {"name": "拖入乙", "layers": [{"fmt": "zip", "locked": False, "header_enc": True}]}]}
-    path = tmp_path / "two-templates.json"
-    path.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+    recipe = DeliveryRecipe(1, "imported", "文案", (TextLayer("magic", "mojibake", params={"mode": "old"}, secret_slot="custom/slot"),)).to_dict()
+    path = tmp_path / "pipeline-template.json"
+    export_pipeline_file({
+        "name": "整条预设",
+        "layers": [{"type": "archive", "fmt": "lz4", "locked": False, "header_enc": True},
+                   {"type": "split", "size": "1200MB"}],
+        "options": {"checksum": True, "raw_merge": False},
+        "disks": ["quark", "123pan"], "form": "simple", "hop_disk": "feimao",
+        "expiry": "default", "access": "default",
+        "pwd_hint": "模板提示", "schemes": ["beast"], "text_recipes": [recipe],
+    }, path)
+    page.click(".nav-item[data-page='pipeline']")
+    page.wait_for_timeout(200)
+    # Leave unrelated old settings behind; importing must replace them.
+    page.evaluate("""() => { const p = window.__MISONG_APP__.S.pipeline;
+      p.disks = ['feimao']; p.schemes = ['hajimi']; p._step = 4; p.task_name = '旧任务';
+      p.inputs = [{path: 'D:/x.bin', name: 'x.bin', dir: false, size: 1}]; }""")
+    fake.next_pick = [str(path)]
+    page.click("#pipelineImportTpl")
+    page.wait_for_timeout(600)
+    state = page.evaluate("""() => { const p = window.__MISONG_APP__.S.pipeline;
+      return {kinds: p.layers.map(l => l.fmt || l.type), step: p._step, disks: p.disks, form: p.form,
+              pwd: p.pwdHint, schemes: p.schemes, checksum: p.checksum, inputs: p.inputs.length,
+              name: p.task_name, recipes: p.recipes.length, mode: p.textMode}; }""")
+    assert state == {"kinds": ["lz4", "split"], "step": 1, "disks": ["quark", "123pan"],
+                     "form": "simple", "pwd": "模板提示", "schemes": ["beast"], "checksum": True,
+                     "inputs": 0, "name": "", "recipes": 1, "mode": "recipes"}
+    assert requests(fake, "pipeline_template_from_paths")[-1] == [[str(path)]]
+    assert "已载入一条龙模板" in page.locator("#toasts").inner_text()
+    # The packing page has no template import any more and rejects the drop.
+    page.click(".nav-item[data-page='pack']")
+    page.wait_for_timeout(300)
+    assert page.locator(".page.active [data-importtpl]").count() == 0
     page.evaluate("p => window.misongDrop([p])", str(path))
-    page.wait_for_timeout(500)
-    names = [t["name"] for t in api.templates()["data"]]
-    assert "拖入甲" in names and "拖入乙" in names
-    assert "已存入 2 个快速模板" in page.locator("#toasts").inner_text()
+    page.wait_for_timeout(300)
+    assert "一条龙模板请到一条龙发布页导入" in page.locator("#toasts").inner_text()
+    assert not errors
+
+
+def test_multiple_or_foreign_template_drops_are_rejected(ui, tmp_path):
+    page, fake, api, errors = ui
+    page.click(".nav-item[data-page='pipeline']")
+    page.wait_for_timeout(200)
+    page.evaluate("() => window.misongDrop(['D:/a.json', 'D:/b.json'])")
+    page.wait_for_timeout(200)
+    assert "请选择一个一条龙模板文件" in page.locator("#toasts").inner_text()
+    old = tmp_path / "old-layer-template.json"
+    old.write_text(json.dumps({"schema_version": 1, "kind": "misong-templates", "templates": [
+        {"name": "旧层模板", "layers": [{"fmt": "7z", "locked": False, "header_enc": True}]}]},
+        ensure_ascii=False), encoding="utf-8")
+    page.evaluate("p => window.misongDrop([p])", str(old))
+    page.wait_for_timeout(300)
+    assert "旧的加密层模板" in page.locator("#toasts").inner_text()
+    assert "旧层模板" not in [t["name"] for t in api.templates()["data"]]
+    assert not errors
+
+
+def test_reuse_settings_restores_text_recipes(ui):
+    page, fake, api, errors = ui
+    recipe = DeliveryRecipe(1, "kept", "沿用", (TextLayer("magic", "mojibake", secret_slot="kept/magic"),)).to_dict()
+    fake.edits[r"D:\misong\runs\a"]["settings"] = {
+        "layers": [{"fmt": "lz4", "locked": False}, {"fmt": "7z", "locked": True, "header_enc": True}],
+        "body_disks": ["quark", "123pan"], "form": "direct", "hop_disk": "",
+        "expiry": "default", "access": "default", "pwd_hint": "沿用提示", "schemes": [],
+        "text_recipes": [recipe]}
+    page.click(".nav-item[data-page='tasks']")
+    page.wait_for_timeout(300)
+    page.click("#taskDetail [data-reuse]")
+    page.wait_for_timeout(400)
+    state = page.evaluate("""() => { const p = window.__MISONG_APP__.S.pipeline;
+      return {recipes: p.recipes.length, mode: p.textMode, disks: p.disks, pwd: p.pwdHint, step: p._step}; }""")
+    assert state == {"recipes": 1, "mode": "recipes", "disks": ["quark", "123pan"], "pwd": "沿用提示", "step": 1}
+    assert "含 1 个文案方案" in page.locator("#toasts").inner_text()
     assert not errors

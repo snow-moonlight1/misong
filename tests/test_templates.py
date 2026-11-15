@@ -173,3 +173,62 @@ def test_import_has_no_side_effects(tmp_path, monkeypatch):
     result = tpl.import_file(path, [])
     assert result["added"] == ["https://example.com/run"]
     assert sorted(p.name for p in tmp_path.iterdir()) == before
+
+
+PIPELINE = {
+    "name": "整条预设",
+    "layers": [{"fmt": "7z", "locked": True, "header_enc": True, "password": PASSWORD},
+               {"type": "split", "size": "1900M"}],
+    "disguise": ".mp4", "size": "1900M",
+    "options": {"raw_merge": True, "checksum": False},
+    "disks": ["quark", "123pan"], "form": "direct", "hop_disk": "",
+    "expiry": "7", "access": "code", "pwd_hint": "请向分享者获取解压密码。",
+    "schemes": ["beast"], "text_recipes": [RECIPE],
+}
+
+
+def _pipeline_doc(template):
+    return {"schema_version": 1, "kind": "misong-pipeline-template", "template": template}
+
+
+def test_pipeline_template_export_drops_private_fields(tmp_path):
+    out = tmp_path / "pipeline.json"
+    result = tpl.export_pipeline_file({**PIPELINE, "password": "top-secret",
+                                       "task_name": "private-name"}, out)
+    assert result["name"] == "整条预设"
+    text = out.read_text(encoding="utf-8")
+    for secret in (PASSWORD, "top-secret", "private-name", PASSWORD.lower()):
+        assert secret not in text
+    doc = json.loads(text)
+    assert doc["kind"] == "misong-pipeline-template"
+    item = doc["template"]
+    assert item["layers"][0] == {"fmt": "7z", "locked": True, "header_enc": True}
+    assert item["layers"][1] == {"type": "split", "size": "1900M"}
+    assert item["disks"] == ["quark", "123pan"] and item["form"] == "direct"
+    assert item["text_recipes"] == [RECIPE]
+    assert tpl.read_pipeline_file(out) == item
+
+
+@pytest.mark.parametrize("change", [
+    {"disks": []},
+    {"disks": ["unknown"]},
+    {"form": "relay"},
+    {"form": "simple", "hop_disk": ""},
+    {"schemes": ["unknown"]},
+    {"schemes": [], "text_recipes": []},
+    {"expiry": "999"},
+    {"pwd_hint": "x" * 501},
+    {"layers": [{"fmt": "7z", "locked": True, "header_enc": True, "password": PASSWORD}]},
+])
+def test_pipeline_template_import_is_strict(tmp_path, change):
+    path = tmp_path / "strict.json"
+    path.write_text(json.dumps(_pipeline_doc({**PIPELINE, **change}), ensure_ascii=False), encoding="utf-8")
+    with pytest.raises(TemplateError):
+        tpl.read_pipeline_file(path)
+
+
+def test_pipeline_template_rejects_old_layer_files(tmp_path):
+    old = tmp_path / "old.json"
+    tpl.export_file([STORED], old)
+    with pytest.raises(TemplateError, match="旧的加密层模板"):
+        tpl.read_pipeline_file(old)

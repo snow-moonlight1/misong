@@ -341,6 +341,8 @@ class Api:
             snap["disguise"] = Api._disguise(snap["disguise"])
         if kind != "upload":
             snap["layers"] = layers
+        if kind == "pipeline" and isinstance(cfg.get("recipes"), list) and cfg["recipes"]:
+            snap["text_recipes"] = cfg["recipes"]
         return snap
 
     # ---------- static data ----------
@@ -490,18 +492,25 @@ class Api:
 
     @_safe
     def export_task_template(self, folder, path):
-        """Export one task's public packing config as a single-template file."""
-        from ..templates import export_file, validate_template
+        """Export one pipeline task's public setup as a one-stop template."""
+        from ..templates import export_pipeline_file
         folder = self._managed(folder)
         task = self._task_at(folder)
         settings = (task or {}).get("settings") or {}
         layers = settings.get("layers") or []
-        if task is None or task["kind"] == "upload" or not layers:
-            raise ValueError("该任务没有打包层配置，无法导出模板")
-        name = str(task.get("title") or folder.name).strip()[:24].strip() or "任务模板"
+        if task is None or task["kind"] != "pipeline" or not layers:
+            raise ValueError("只有一条龙任务可以导出一条龙模板")
+        name = str(task.get("title") or folder.name).strip()[:24].strip() or "一条龙模板"
         item = {"name": name, "layers": layers,
                 "disguise": settings.get("disguise", ""), "size": settings.get("size", ""),
-                "options": {k: settings[k] for k in ("raw_merge", "checksum") if isinstance(settings.get(k), bool)}}
+                "options": {k: settings[k] for k in ("raw_merge", "checksum") if isinstance(settings.get(k), bool)},
+                "disks": settings.get("body_disks") or [],
+                "form": settings.get("form") or "direct",
+                "hop_disk": settings.get("hop_disk") or "",
+                "expiry": settings.get("expiry") or "default",
+                "access": settings.get("access") or "default",
+                "pwd_hint": settings.get("pwd_hint") or "",
+                "schemes": settings.get("schemes") or []}
         plan = folder / "relay-plan.json"
         if plan.exists():
             try:
@@ -510,26 +519,15 @@ class Api:
                 recipes = []
             if recipes:
                 item["text_recipes"] = recipes
-        return export_file([validate_template(item, strict=False)], path)
+        return export_pipeline_file(item, path)
 
     @_safe
-    def template_from_paths(self, paths):
-        """Read dropped template files: one template is returned for direct apply,
-        several are stored as quick templates (renaming conflicts)."""
-        from ..templates import merge, read_file
+    def pipeline_template_from_paths(self, paths):
+        from ..templates import read_pipeline_file
         paths = [str(p) for p in paths or []]
-        if not paths:
-            raise ValueError("没有模板文件")
-        incoming = []
-        for path in paths:
-            incoming.extend(read_file(path))
-        if len(incoming) == 1:
-            return {"templates": incoming, "saved": None}
-        if self._job is not None:
-            raise ValueError("请先暂停任务再导入模板")
-        result = merge(self._load_templates(), incoming)
-        self._save_templates(result["templates"])
-        return {"templates": incoming, "saved": result}
+        if len(paths) != 1:
+            raise ValueError("请选择一个一条龙模板文件")
+        return {"template": read_pipeline_file(paths[0])}
 
     @_safe
     def export_diagnostics(self, path, tasks=None, log_lines=None):
@@ -542,10 +540,10 @@ class Api:
     @_safe
     def pick_save_file(self, kind="diagnostics"):
         import webview
-        if kind not in ("diagnostics", "templates", "task-template"):
+        if kind not in ("diagnostics", "templates", "pipeline-template"):
             raise ValueError("保存类型无效")
         name = {"diagnostics": "misong-diagnostics.zip", "templates": "misong-templates.json",
-                "task-template": "misong-task-template.json"}[kind]
+                "pipeline-template": "misong-pipeline-template.json"}[kind]
         chosen = self._window.create_file_dialog(webview.FileDialog.SAVE, save_filename=name)
         return str(chosen[0]) if isinstance(chosen, (list, tuple)) and chosen else str(chosen or "")
 
@@ -816,6 +814,9 @@ class Api:
         if kind == "pipeline":
             hop = next((s["disk"] for s in stages if s["role"] == "hop"), None)
             snap.update(form=plan.get("form", "direct"), pwd_hint=plan.get("pwd_hint", ""), **({"hop_disk": hop} if hop else {}))
+            recipes = plan.get("text_recipes")
+            if isinstance(recipes, list) and recipes:
+                snap["text_recipes"] = recipes
         return snap
 
     def _extras_path(self) -> Path:
@@ -851,6 +852,11 @@ class Api:
         stages.sort(key=lambda s: s["role"] == "hop")
         stat = path.stat()
         kind = meta.get("kind") or ("pipeline" if plan.get("pwd_hint") else "upload")
+        settings = meta.get("settings") or self._derived_settings(plan, stages, kind)
+        if kind == "pipeline" and not settings.get("text_recipes"):
+            recipes = plan.get("text_recipes")
+            if isinstance(recipes, list) and recipes:
+                settings = {**settings, "text_recipes": recipes}
         data = {"plan": str(path), "dir": str(path.parent), "id": plan.get("id"),
                 "kind": kind, "title": meta.get("title") or path.parent.name,
                 "created": meta.get("created") or _iso(path.parent.stat().st_ctime), "updated": _iso(stat.st_mtime),
@@ -859,7 +865,7 @@ class Api:
                 "stages": stages, "error": error_text(plan.get("error")),
                 "cleanup": cleanup.summary(plan),
                 "delivery": workflows.delivery_status(plan),
-                "settings": meta.get("settings") or self._derived_settings(plan, stages, kind)}
+                "settings": settings}
         return self._decorate(data, meta, path.parent)
 
     def _pack_summary(self, folder: Path) -> dict:

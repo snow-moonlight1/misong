@@ -25,14 +25,21 @@ from pathlib import Path
 
 SCHEMA_VERSION = 1
 KIND = "misong-templates"
+PIPELINE_KIND = "misong-pipeline-template"
 MAX_FILE_BYTES = 256 * 1024
 MAX_TEMPLATES = 30          # same limit as desktop.api.MAX_TEMPLATES
 MAX_NAME = 24               # same limit as Api.save_template
 MAX_LAYERS = 32
+MAX_PWD_HINT = 500
 TOP_FIELDS = {"schema_version", "kind", "templates"}
 TOP_OPTIONAL = {"exported_at"}
 TEMPLATE_FIELDS = {"name", "layers"}
 TEMPLATE_OPTIONAL = {"disguise", "size", "options", "text_recipes"}
+PIPELINE_TOP_FIELDS = {"schema_version", "kind", "template"}
+PIPELINE_TOP_OPTIONAL = {"exported_at"}
+PIPELINE_FIELDS = {"name", "layers"}
+PIPELINE_OPTIONAL = {"disguise", "size", "options", "disks", "form", "hop_disk",
+                     "expiry", "access", "pwd_hint", "schemes", "text_recipes"}
 OPTION_FIELDS = ("raw_merge", "checksum")
 LAYER_FIELDS = {
     "archive": ({"fmt", "locked", "header_enc"}, {"type", "level"}),
@@ -288,6 +295,10 @@ def parse_document(text) -> list:
 
 def read_file(path) -> list:
     """Read only the file the user explicitly chose."""
+    return parse_document(_read_template_bytes(path))
+
+
+def _read_template_bytes(path) -> bytes:
     path = Path(path)
     if path.suffix.lower() != ".json":
         _fail("只能导入 .json 模板文件")
@@ -302,7 +313,139 @@ def read_file(path) -> list:
     if st.st_size > MAX_FILE_BYTES:
         _fail("模板文件超出大小上限")
     with open(path, "rb") as handle:
-        return parse_document(handle.read(MAX_FILE_BYTES + 1))
+        return handle.read(MAX_FILE_BYTES + 1)
+
+
+def validate_pipeline_template(raw, *, strict: bool = True) -> dict:
+    """Return a clean one-stop pipeline template.
+
+    Only public settings are kept: layers (passwords reduced to flags), packing
+    options, chosen disks and share choices, schemes and public text recipes.
+    Resource paths, passwords, keys, task names and cover videos are excluded.
+    ``strict=False`` is used for the app's own stored settings and drops
+    fields the app may keep internally instead of refusing them.
+    """
+    from .desktop.api import Api, FORMS
+    from .providers import PROVIDERS
+    from .share_options import ACCESS_LABELS, EXPIRY_LABELS
+    from .sharing import COPY_SCHEMES
+    if not isinstance(raw, dict):
+        _fail("一条龙模板结构错误")
+    if not strict:
+        raw = {k: v for k, v in raw.items() if k in PIPELINE_FIELDS | PIPELINE_OPTIONAL}
+        if isinstance(raw.get("layers"), list):
+            raw["layers"] = [_stored_layer(x) for x in raw["layers"]]
+    _fields(raw, PIPELINE_FIELDS, PIPELINE_OPTIONAL, "一条龙模板")
+    name = _name(raw["name"])
+    if not isinstance(raw["layers"], list):
+        _fail("一条龙模板层列表结构错误")
+    if len(raw["layers"]) > MAX_LAYERS:
+        _fail(f"模板最多 {MAX_LAYERS} 层")
+    layers = _clean_layers([_layer(x, i) for i, x in enumerate(raw["layers"])])
+    disguise, size = raw.get("disguise", ""), raw.get("size", "")
+    if not isinstance(disguise, str) or not isinstance(size, str) or len(size) > 32:
+        _fail("伪装后缀或分卷大小类型错误")
+    try:
+        disguise = Api._disguise(disguise)
+        if size.strip():
+            from .split import parse_size
+            parse_size(size.strip())
+    except Exception as error:
+        _fail(str(error)[:120] or "伪装后缀或分卷大小无效")
+    item = {"name": name, "layers": layers, "disguise": disguise, "size": size.strip()}
+    if raw.get("options") is not None:
+        item["options"] = _options(raw["options"])
+    disks = raw.get("disks", [])
+    if not isinstance(disks, list) or not disks or len(disks) > len(PROVIDERS) \
+            or len(set(disks)) != len(disks) \
+            or any(not isinstance(disk, str) or disk not in PROVIDERS for disk in disks):
+        _fail("一条龙模板的网盘列表无效")
+    form = raw.get("form", "direct")
+    if form not in FORMS:
+        _fail("一条龙模板的分享方式无效")
+    hop = raw.get("hop_disk", "")
+    if not isinstance(hop, str) or (hop and hop not in PROVIDERS):
+        _fail("一条龙模板的第一跳网盘无效")
+    if form != "direct" and not hop:
+        _fail("中转模板缺少第一跳网盘")
+    expiry, access = raw.get("expiry", "default"), raw.get("access", "default")
+    if expiry not in EXPIRY_LABELS or access not in ACCESS_LABELS:
+        _fail("一条龙模板的分享有效期或提取码无效")
+    hint = raw.get("pwd_hint", "")
+    if not isinstance(hint, str) or len(hint) > MAX_PWD_HINT:
+        _fail("一条龙模板的密码提示无效")
+    schemes = raw.get("schemes", [])
+    if not isinstance(schemes, list) or len(set(schemes)) != len(schemes) \
+            or any(not isinstance(s, str) or s not in COPY_SCHEMES for s in schemes):
+        _fail("一条龙模板的文案方案列表无效")
+    recipes = _recipes(raw["text_recipes"]) if raw.get("text_recipes") is not None else []
+    if not schemes and not recipes:
+        _fail("一条龙模板没有文案方案")
+    item.update({"disks": disks, "form": form, "hop_disk": hop, "expiry": expiry,
+                 "access": access, "pwd_hint": hint, "schemes": schemes})
+    if recipes:
+        item["text_recipes"] = recipes
+    return item
+
+
+def parse_pipeline_document(text) -> dict:
+    """Strictly parse one pipeline-template JSON document."""
+    if isinstance(text, (bytes, bytearray)):
+        if len(text) > MAX_FILE_BYTES:
+            _fail("模板文件超出大小上限")
+        try:
+            text = bytes(text).decode("utf-8-sig")
+        except UnicodeDecodeError:
+            _fail("模板文件不是 UTF-8 文本")
+    if not isinstance(text, str):
+        _fail("模板文件结构错误")
+    if len(text.encode("utf-8")) > MAX_FILE_BYTES:
+        _fail("模板文件超出大小上限")
+    try:
+        data = json.loads(text, object_pairs_hook=_no_duplicates, parse_constant=_no_constant)
+    except TemplateError:
+        raise
+    except (ValueError, RecursionError):
+        _fail("模板文件不是有效 JSON")
+    if isinstance(data, dict) and data.get("kind") == KIND:
+        _fail("这是旧的加密层模板；现在只支持一条龙模板，请从一条龙任务详情重新导出")
+    _fields(data, PIPELINE_TOP_FIELDS, PIPELINE_TOP_OPTIONAL, "一条龙模板文件")
+    version = data["schema_version"]
+    if type(version) is not int:
+        _fail("schema_version 类型错误")
+    if version != SCHEMA_VERSION:
+        _fail(f"不支持的模板版本：{version}")
+    if data["kind"] != PIPELINE_KIND:
+        _fail("不是一条龙模板文件")
+    if "exported_at" in data and not isinstance(data["exported_at"], str):
+        _fail("exported_at 类型错误")
+    return validate_pipeline_template(data["template"])
+
+
+def read_pipeline_file(path) -> dict:
+    """Read and validate one explicitly chosen pipeline-template file."""
+    return parse_pipeline_document(_read_template_bytes(path))
+
+
+def export_pipeline_file(item, path) -> dict:
+    """Write one pipeline template; never overwrites an existing file."""
+    path = Path(path)
+    if path.suffix.lower() != ".json":
+        _fail("模板文件必须保存为 .json")
+    if _is_link(path.parent) or not path.parent.is_dir():
+        _fail("保存位置不存在或是符号链接")
+    template = validate_pipeline_template(item, strict=False)
+    body = json.dumps({"schema_version": SCHEMA_VERSION, "kind": PIPELINE_KIND,
+                       "exported_at": datetime.now().isoformat(timespec="seconds"),
+                       "template": template}, ensure_ascii=False, indent=2) + "\n"
+    if len(body.encode("utf-8")) > MAX_FILE_BYTES:
+        _fail("模板文件超出大小上限")
+    try:
+        with open(path, "x", encoding="utf-8", newline="\n") as handle:
+            handle.write(body)
+    except FileExistsError:
+        _fail("目标文件已存在，不会覆盖")
+    return {"path": str(path), "name": template["name"]}
 
 
 def unique_name(name: str, taken) -> str:

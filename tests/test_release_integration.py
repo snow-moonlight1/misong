@@ -84,7 +84,7 @@ def test_template_import_rename_export_preserves_options_and_recipes(tmp_path):
     assert next(t for t in restored if t["name"] == "改名模板")["text_recipes"] == item["text_recipes"]
 
 
-def test_task_template_export_and_drop_roundtrip(tmp_path):
+def test_pipeline_template_export_and_import_roundtrip(tmp_path):
     from misong import workflows
     runs = tmp_path / "runs"
     api = Api(runs, tmp_path / "state")
@@ -95,38 +95,54 @@ def test_task_template_export_and_drop_roundtrip(tmp_path):
     layers = [{"type": "archive", "fmt": "7z", "locked": True, "header_enc": True, "password": "never-exported"},
               {"type": "split", "size": "1900MB"}]
     workflows.write_meta(folder, "pipeline", "任务标题", settings={
-        "layers": layers, "disguise": ".mp4", "size": "", "raw_merge": True, "checksum": True, "layers_version": 2})
-    dest = tmp_path / "task-template.json"
+        "layers": layers, "disguise": ".mp4", "size": "", "raw_merge": True, "checksum": True,
+        "body_disks": ["quark", "123pan"], "form": "direct", "hop_disk": "", "expiry": "7",
+        "access": "code", "pwd_hint": "synthetic", "schemes": [], "layers_version": 2})
+    dest = tmp_path / "pipeline-template.json"
     result = api.export_task_template(str(folder), str(dest))
     assert result["ok"], result
-    item = json.loads(dest.read_text(encoding="utf-8"))["templates"][0]
+    doc = json.loads(dest.read_text(encoding="utf-8"))
+    assert doc["kind"] == "misong-pipeline-template"
+    item = doc["template"]
     assert item["name"] == "任务标题" and item["disguise"] == ".mp4"
     assert item["options"] == {"raw_merge": True, "checksum": True}
     assert item["text_recipes"] == plan["text_recipes"]
+    assert item["disks"] == ["quark", "123pan"] and item["form"] == "direct"
+    assert (item["expiry"], item["access"], item["pwd_hint"]) == ("7", "code", "synthetic")
     assert "never-exported" not in dest.read_text(encoding="utf-8")
     assert [l.get("type", "archive") for l in item["layers"]] == ["archive", "split"]
-    # one dropped template is returned for direct apply and stores nothing
+    # Old snapshots without recipes still surface the plan's public recipes.
+    detail = api.task_detail(str(path))["data"]
+    assert detail["settings"]["text_recipes"] == plan["text_recipes"]
+    # importing returns the validated template and never touches quick templates
     before = api.templates()["data"]
-    dropped = api.template_from_paths([str(dest)])
-    assert dropped["ok"], dropped
-    assert dropped["data"]["saved"] is None
-    assert dropped["data"]["templates"] == [item]
+    imported = api.pipeline_template_from_paths([str(dest)])
+    assert imported["ok"], imported
+    assert imported["data"]["template"] == item
     assert api.templates()["data"] == before
-    # several dropped templates become quick templates, renaming conflicts
-    second = tmp_path / "second.json"
-    assert templates.export_file([{"name": "任务标题", "layers": [{"fmt": "zip", "locked": False, "header_enc": True}]}], second)["count"] == 1
-    multi = api.template_from_paths([str(dest), str(second)])
-    assert multi["ok"], multi
-    assert multi["data"]["saved"]["renamed"] == [{"from": "任务标题", "to": "任务标题 (2)"}]
-    names = [t["name"] for t in api.templates()["data"]]
-    assert "任务标题" in names and "任务标题 (2)" in names
-    # never overwrites an existing file; refuses tasks without packing layers
-    assert not api.export_task_template(str(folder), str(dest))["ok"]
+    assert not api.pipeline_template_from_paths([str(dest), str(dest)])["ok"]
+    # only pipeline tasks can export; overwriting is refused
+    pack = runs / "pack-only"
+    pack.mkdir()
+    workflows.write_meta(pack, "pack", "仅打包")
+    assert not api.export_task_template(str(pack), str(tmp_path / "pack.json"))["ok"]
     upload = runs / "upload-only"
     upload.mkdir()
     make_plan(upload)
     workflows.write_meta(upload, "upload", "仅上传")
     assert not api.export_task_template(str(upload), str(tmp_path / "nope.json"))["ok"]
+    assert not api.export_task_template(str(folder), str(dest))["ok"]
+
+
+def test_pipeline_snapshot_and_derived_settings_keep_public_recipes():
+    recipe = DeliveryRecipe(1, "r2", "文案", (TextLayer("magic", "mojibake", secret_slot="r2/magic"),)).to_dict()
+    snap = Api._snapshot({"layers": [{"type": "archive", "fmt": "7z", "locked": True, "header_enc": True}],
+                          "recipes": [recipe], "body_disks": ["quark"]}, "pipeline")
+    assert snap["text_recipes"] == [recipe]
+    derived = Api._derived_settings(
+        {"schemes": [], "share_options": {}, "form": "direct", "pwd_hint": "", "text_recipes": [recipe]},
+        [{"disk": "quark", "role": "body"}], "pipeline")
+    assert derived["text_recipes"] == [recipe]
 
 
 def test_cli_diagnostic_and_template_routes(tmp_path, monkeypatch, capsys):

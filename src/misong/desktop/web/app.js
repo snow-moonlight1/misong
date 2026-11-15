@@ -222,7 +222,7 @@ function checkPasswords(page, cont, onBack) {
   }
   const miss = missingLocked(st);
   if (hasPassword(st) && miss && !st._lockAck) {
-    confirmModal("还有加密层没填密码", `模板要求加密的层里有 ${miss} 层还没有填写密码，这些层将只压缩、不加密。`,
+    confirmModal("还有加密层没填密码", `模板标记为加密的层里有 ${miss} 层还没填密码，这些层将只压缩、不加密。`,
       "返回填写", "这些层不加密，继续", () => { st._lockAck = true; cont(); }, onBack);
     return;
   }
@@ -256,7 +256,7 @@ function layerEditor(state, mountSel, root) {
       const opts = fmts.map((f) => `<option value="${f.key}" ${f.key === l.fmt ? "selected" : ""}>${esc(f.key)}${f.password ? "" : " · 无密码"}</option>`).join("");
       const lockable = canLock(l.fmt);
       fields = `<div class="layer-archive"><label class="field"><span>归档格式</span><select class="select" data-lfmt>${opts}</select></label>
-        <label class="field"><span>密码 · 可空</span><div class="pw"><input class="input" type="password" placeholder="${lockable ? (l._lock ? "模板要求密码" : "不填写则仅压缩") : "该格式不支持密码"}" value="${esc(l.password || "")}" autocomplete="off" ${lockable ? "" : "disabled"} data-lpw><button type="button" data-pwtoggle>${icon("eye")}</button></div></label>
+        <label class="field"><span>密码 · 可空</span><div class="pw"><input class="input" type="password" placeholder="${lockable ? (l._lock ? "建议填写密码（可留空）" : "不填写则仅压缩") : "该格式不支持密码"}" value="${esc(l.password || "")}" autocomplete="off" ${lockable ? "" : "disabled"} data-lpw><button type="button" data-pwtoggle>${icon("eye")}</button></div></label>
         <label class="field"><span>压缩等级</span><select class="select" data-level><option value="" ${l.level == null ? "selected" : ""}>自动（${i ? "仅存储" : "标准压缩"}）</option>${[0,1,3,5,7,9].map((v) => `<option value="${v}" ${l.level === v ? "selected" : ""}>${v === 0 ? "0 · 仅存储" : v}</option>`).join("")}</select></label>
         <label class="check layer-header" ${l.fmt === "7z" ? "" : "hidden"}><input type="checkbox" data-lhe ${l.header_enc !== false ? "checked" : ""}>加密文件名（有密码时）</label></div>`;
     } else if (kind === "cover") fields = videoField(l, i);
@@ -311,10 +311,11 @@ function layerEditor(state, mountSel, root) {
     $("[data-addlayer]", mount).addEventListener("click", () => { state.layers.push({ type: $("[data-addtype]", mount).value, fmt: "7z", password: "", header_enc: true, video: "", size: "1900MB", ext: ".mp4" }); render(); sync(); });
     $$("[data-tpl]", mount).forEach((b) => b.addEventListener("click", () => {
       const t = S.meta.templates[+b.dataset.tpl]; if (!t) return;
-      applyLayers(state, t.layers || [], { ...t });
+      const opts = { ...t };
+      if (page !== "pipeline") delete opts.text_recipes;
+      applyLayers(state, t.layers || [], opts);
       rerender(page);
-      const need = missingLocked(state);
-      toast(`已套用「${t.name}」` + (need ? `，请在标出的 ${need} 个加密层填写密码` : "，可继续调整"), "ok");
+      templateAppliedToast(page, t, state);
     }));
     const rs = $("[data-tplreset]", mount);
     if (rs) rs.addEventListener("click", async () => { try { templatesChanged(await call("reset_templates"), page, "已恢复内置模板"); } catch (e) { toast(e.message, "err"); } });
@@ -1371,7 +1372,7 @@ function renderTaskDetail() {
   const errHtml = d.error && d.state !== "complete" ? `<div class="callout warn">${icon("warn")}<span><b>上次中断原因：</b>${esc(d.error)}。可点“继续”从检查点接着跑；如果已在网盘里手动分享，也可以“回填分享”。</span></div>` : "";
   const noteHtml = d.note ? `<div class="callout">${icon("info")}<span>${esc(d.note)}</span></div>` : "";
   host.innerHTML = `<div class="detail"><div class="detail-head"><div class="detail-title"><button class="star big ${d.starred ? "on" : ""}" data-dstar title="${d.starred ? "取消收藏" : "收藏"}" aria-label="收藏">${icon(d.starred ? "starfill" : "star")}</button><div><h2>${esc(d.title)}</h2><button class="path-link" data-open="${esc(d.dir)}" title="点击打开任务文件夹">${icon("folder")}<span>${esc(d.dir)}</span></button></div></div></div>
-    <div class="detail-actions">${canResume ? `<button class="btn btn-primary" data-resume="${esc(d.plan)}" ${running ? "disabled" : ""}>${icon("play")}继续</button>` : ""}<button class="btn" data-reuse title="把这个任务的打包、网盘和文案设置填到新建页面（不含密码和资源）">${icon("refresh")}复用设置</button>${(d.settings?.layers || []).length ? `<button class="btn" data-exporttpl title="把这个任务的层配置导出为模板文件（不含密码、密钥和路径）；下次发布时拖进新建页面即可套用">${icon("download")}导出模板</button>` : ""}<span class="grow"></span>
+    <div class="detail-actions">${canResume ? `<button class="btn btn-primary" data-resume="${esc(d.plan)}" ${running ? "disabled" : ""}>${icon("play")}继续</button>` : ""}<button class="btn" data-reuse title="把这个任务的加密层、网盘、分享和文案方案填到新建页面（不含密码和资源）">${icon("refresh")}复用设置</button>${d.kind === "pipeline" && (d.settings?.layers || []).length ? `<button class="btn" data-exporttpl title="把这个任务的一条龙设置导出为模板文件（含加密层、网盘、分享和文案；不含密码、密钥和路径）；下次发布时在“选择资源”页导入即可套用">${icon("download")}导出模板</button>` : ""}<span class="grow"></span>
     <button class="btn btn-ghost icon-only" data-edit title="重命名 / 备注" aria-label="编辑">${icon("edit")}</button><button class="btn btn-ghost icon-only btn-danger" data-del title="${d.imported ? "从列表移除（保留文件）" : "删除（移到回收站）"}" aria-label="删除" ${running ? "disabled" : ""}>${icon("trash")}</button></div>
     ${errHtml}${noteHtml}${cleanupNote(d)}<div class="detail-grid">${statsHtml}</div>${stages}${d.delivery?.recipes?.length ? `<div class="card"><h3>交付方案</h3>${d.delivery.recipes.map(r => `<p>${esc(r.name)} · ${esc(STATE_LABEL[r.status] || r.status)} ${esc(r.error_code || "")}</p>`).join("")}</div>` : ""}${copies}${filesHtml}</div>`;
   paintIcons(host);
@@ -1387,9 +1388,9 @@ function renderTaskDetail() {
   const et = $("[data-exporttpl]", host);
   if (et) et.addEventListener("click", async () => {
     try {
-      const path = await call("pick_save_file", "task-template"); if (!path) return;
+      const path = await call("pick_save_file", "pipeline-template"); if (!path) return;
       const r = await call("export_task_template", d.dir, path);
-      toast("已导出模板：" + r.path, "ok");
+      toast("已导出一条龙模板：" + r.path, "ok");
     } catch (e) { toast(e.message, "err"); }
   });
 }
@@ -1437,6 +1438,7 @@ function reuseSettings(d) {
   if (page !== "upload") {
     if (Array.isArray(s.layers) && s.layers.length) applyLayers(st, s.layers, { ...s, split: page === "pipeline" ? true : s.split });
     st.checksum = !!s.checksum;
+    st.raw_merge = !!s.raw_merge;
     st.inputs = [];
   }
   if (page !== "pack") {
@@ -1446,30 +1448,78 @@ function reuseSettings(d) {
     if (Array.isArray(s.schemes)) st.schemes = s.schemes.slice();
     if (page === "upload") { st.files = []; st.checksum = !!s.checksum; }
   }
-  if (page === "pipeline") { if (s.form) st.form = s.form; if (s.hop_disk) st.hop = s.hop_disk; if (s.pwd_hint) st.pwdHint = s.pwd_hint; st.hopPw = ""; st.cleanup_after_upload = false; }
+  if (page === "pipeline") { if (s.form) st.form = s.form; if (s.hop_disk) st.hop = s.hop_disk; if (s.pwd_hint) st.pwdHint = s.pwd_hint; st.hopPw = ""; st.cleanup_after_upload = false; st.restore_key_location = "none"; }
+  if (page === "pipeline") {
+    ensureText(st);
+    if (!Array.isArray(s.text_recipes) || !s.text_recipes.length) {
+      st.recipes = []; st.textMode = "legacy";
+      st.textSecrets = {}; st.textVideos = {}; st.exportKeys = [];
+    }
+  }
   st.result = null;
   if (page === "pipeline") st._step = 1;
   go(page);
   if (page !== "pack") refreshShareChoices(page);
   const needPw = page !== "upload" && st.layers.some((l) => l._lock);
-  toast("已载入该任务的设置，请重新添加" + (page === "upload" ? "文件" : "资源") + (needPw ? "，并在加密层填写密码" : ""), "ok");
+  const recipes = page === "pipeline" && Array.isArray(s.text_recipes) ? s.text_recipes.length : 0;
+  toast("已载入该任务的设置" + (recipes ? `（含 ${recipes} 个文案方案）` : "") + "，请重新添加"
+    + (page === "upload" ? "文件" : "资源") + (needPw ? "；模板标记了加密层，密码需重新填写（可留空）" : ""), "ok");
 }
-/* a dropped template file: one template applies to the editor, several become quick templates */
-async function applyTemplateDrop(page, paths) {
+/* one-stop pipeline template: public layers, disks, share choices and copy */
+async function importPipelineTemplate(paths) {
   try {
-    const r = await call("template_from_paths", paths);
-    if (r.saved) {
-      templatesChanged(r.saved.templates, page, `已存入 ${r.saved.added.length} 个快速模板${r.saved.renamed.length ? "，重名已自动改名" : ""}`);
-      return;
+    if (S.job) throw new Error("请先暂停正在运行的任务");
+    if (!paths || !paths.length) {
+      paths = await call("pick_files", false, false);
+      if (!paths || !paths.length) return;
     }
-    const t = r.templates[0]; const st = S[page];
-    applyLayers(st, t.layers || [], { ...t, split: page === "pipeline" ? true : st.split });
-    st.result = null;
-    if (page === "pipeline") st._step = 2;
-    rerender(page);
-    const need = missingLocked(st);
-    toast(`已套用模板「${t.name}」` + (need ? `，请在标出的 ${need} 个加密层填写密码` : ""), "ok");
+    if (paths.length !== 1) { toast("请选择一个一条龙模板文件", "warn"); return; }
+    const r = await call("pipeline_template_from_paths", paths);
+    applyPipelineTemplate(r.template);
   } catch (e) { toast(e.message, "err"); }
+}
+function applyPipelineTemplate(t) {
+  const st = S.pipeline;
+  applyLayers(st, t.layers || [], { ...t, split: true });
+  st.inputs = [];
+  st.task_name = ""; st.folder_name = "";
+  st.checksum = !!(t.options && t.options.checksum);
+  st.raw_merge = !!(t.options && t.options.raw_merge);
+  st.disks = (t.disks || []).filter((k) => S.meta.providers.some((p) => p.key === k && p.auto));
+  st.form = ["direct", "simple", "complex"].includes(t.form) ? t.form : "direct";
+  st.hop = t.hop_disk || "feimao";
+  st.hopPw = "";
+  st.expiry = t.expiry || "default";
+  st.access = t.access || "default";
+  st.pwdHint = t.pwd_hint || "";
+  st.schemes = (t.schemes || []).filter((k) => S.meta.schemes.some((x) => x.key === k));
+  ensureText(st);
+  if (!Array.isArray(t.text_recipes) || !t.text_recipes.length) {
+    st.recipes = []; st.textMode = "legacy";
+    st.textSecrets = {}; st.textVideos = {}; st.exportKeys = [];
+  }
+  st.cleanup_after_upload = false;
+  st.restore_key_location = "none";
+  st.result = null; st._step = 1;
+  rerender("pipeline");
+  refreshShareChoices("pipeline");
+  const recipes = (t.text_recipes || []).length;
+  const parts = [`${(t.layers || []).length} 层`];
+  if (recipes) parts.push(`${recipes} 个文案方案`);
+  else if (st.schemes.length) parts.push(`${st.schemes.length} 种文案`);
+  if (st.disks.length) parts.push(plainDisks(st.disks));
+  const need = missingLocked(st);
+  toast(`已载入一条龙模板「${t.name}」：${parts.join(" · ")}；请添加资源`
+    + (need ? `；模板标记了 ${need} 个加密层，密码可留空` : ""), "ok");
+}
+function templateAppliedToast(page, t, state) {
+  const need = missingLocked(state);
+  const recipes = Array.isArray(t.text_recipes) ? t.text_recipes.length : 0;
+  const scope = page === "pipeline"
+    ? (recipes ? `（含 ${recipes} 个文案方案）` : "的加密层；网盘、分享和文案保持当前设置")
+    : "的加密层与打包选项" + (recipes ? "；文案方案仅用于一条龙，已忽略" : "");
+  toast(`已套用模板「${t.name}」${scope}`
+    + (need ? `；模板标记了 ${need} 个加密层，密码可留空` : ""), "ok");
 }
 function fillShare(plan, stageId) {
   const box = modal(`<h3>回填分享链接</h3><p>粘贴该阶段已上传文件的完整分享文本（含提取码），系统会自动解析。</p>
@@ -1648,6 +1698,7 @@ function bindShell() {
     catch (e) { toast(e.message, "err"); }
   });
   $$("[data-settings-action]").forEach(b => b.onclick = () => settingsAction());
+  $("#pipelineImportTpl").addEventListener("click", () => importPipelineTemplate());
   $$("#taskFilter button").forEach((b) => b.addEventListener("click", () => { $$("#taskFilter button").forEach((x) => x.classList.toggle("on", x === b)); S.tasks.filter = b.dataset.v; renderTasks(); }));
   bindCodec();
   // global drag-drop to the active page
@@ -1657,7 +1708,10 @@ function bindShell() {
     if (d && d.kind === "video" && Date.now() - d.t < 8000 && (p === "pipeline" || p === "pack")) { setVideo(p, paths.find(isVideo) || paths[0], d.layer); return; }
     if (p === "restore") { addRestorePaths(paths).catch(e => toast(e.message, "err")); }
     else if (p === "pipeline" || p === "pack") {
-      if (paths.every((x) => /\.json$/i.test(String(x)))) { applyTemplateDrop(p, paths); return; }
+      if (paths.every((x) => /\.json$/i.test(String(x)))) {
+        if (p === "pipeline") { importPipelineTemplate(paths); return; }
+        toast("一条龙模板请到一条龙发布页导入", "warn"); return;
+      }
       addPaths(S[p].inputs, paths, false).then(() => { rerender(p); if (p === "pipeline" && (S.pipeline._step || 1) !== 1) toast("已添加到第 1 步「选择资源」", "ok"); });
     }
     else if (p === "upload") { addPaths(S.upload.files, paths, true).then(() => rerender("upload")); }
